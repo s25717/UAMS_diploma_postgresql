@@ -198,6 +198,44 @@ public class ClassMeeting {
         this.status = status;
     }
 
+    public boolean isDraft() {
+        return status == ClassMeetingStatus.DRAFT;
+    }
+
+    public boolean isScheduled() {
+        return status == ClassMeetingStatus.SCHEDULED;
+    }
+
+    public boolean isCancelled() {
+        return status == ClassMeetingStatus.CANCELLED;
+    }
+
+    public boolean isCompleted() {
+        return status == ClassMeetingStatus.COMPLETED;
+    }
+
+    public void schedule() {
+        if (status != ClassMeetingStatus.DRAFT) {
+            throw new IllegalStateException("Only draft class meetings can be scheduled.");
+        }
+        status = ClassMeetingStatus.SCHEDULED;
+    }
+
+    public void cancel(String comment) {
+        if (status == ClassMeetingStatus.COMPLETED) {
+            throw new IllegalStateException("Completed class meetings cannot be cancelled.");
+        }
+        status = ClassMeetingStatus.CANCELLED;
+        this.comment = comment;
+    }
+
+    public void complete() {
+        if (status != ClassMeetingStatus.SCHEDULED) {
+            throw new IllegalStateException("Only scheduled class meetings can be completed.");
+        }
+        status = ClassMeetingStatus.COMPLETED;
+    }
+
     public String getComment() {
         return comment;
     }
@@ -257,8 +295,8 @@ public class ClassMeeting {
     }
 
     public void addAttendance(Attendance attendance) {
-        if (status == ClassMeetingStatus.CANCELLED) {
-            throw new IllegalArgumentException("Cannot mark attendance for a cancelled class meeting.");
+        if (status != ClassMeetingStatus.SCHEDULED) {
+            throw new IllegalArgumentException("Attendance can only be marked for a scheduled class meeting.");
         }
         attendances.add(attendance);
         attendance.setClassMeeting(this);

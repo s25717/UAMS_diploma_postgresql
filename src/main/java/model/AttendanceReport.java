@@ -22,6 +22,7 @@ import model.enums.ClassType;
 import model.enums.ReportType;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.HashSet;
 import java.util.Set;
 
@@ -70,6 +71,8 @@ public class AttendanceReport {
     @Valid
     @OneToMany(mappedBy = "report", cascade = CascadeType.ALL, orphanRemoval = true)
     private Set<ReportLine> reportLines = new HashSet<>();
+
+    private LocalDateTime exportedAt;
 
     protected AttendanceReport() {
     }
@@ -214,5 +217,13 @@ public class AttendanceReport {
     public void removeLine(ReportLine line) {
         reportLines.remove(line);
         line.setReport(null);
+    }
+
+    public LocalDateTime getExportedAt() {
+        return exportedAt;
+    }
+
+    public void setExportedAt(LocalDateTime exportedAt) {
+        this.exportedAt = exportedAt;
     }
 }

@@ -7,6 +7,9 @@ import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.JoinTable;
+import jakarta.persistence.ManyToMany;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.OneToMany;
 import jakarta.validation.Valid;
@@ -43,6 +46,14 @@ public class Semester {
 
     @OneToMany(mappedBy = "semester", cascade = CascadeType.ALL, orphanRemoval = true)
     private Set<WeeklyScheduleEntry> weeklyScheduleEntries = new HashSet<>();
+
+    @ManyToMany
+    @JoinTable(
+            name = "semester_subject",
+            joinColumns = @JoinColumn(name = "semester_id"),
+            inverseJoinColumns = @JoinColumn(name = "subject_id")
+    )
+    private Set<Subject> subjects = new HashSet<>();
 
     protected Semester() {
     }
@@ -109,6 +120,14 @@ public class Semester {
         this.weeklyScheduleEntries = weeklyScheduleEntries;
     }
 
+    public Set<Subject> getSubjects() {
+        return subjects;
+    }
+
+    public void setSubjects(Set<Subject> subjects) {
+        this.subjects = subjects;
+    }
+
     public void addGroup(StudentGroup group) {
         groups.add(group);
         group.setSemester(this);
@@ -117,5 +136,15 @@ public class Semester {
     public void removeGroup(StudentGroup group) {
         groups.remove(group);
         group.setSemester(null);
+    }
+
+    public void addSubject(Subject subject) {
+        subjects.add(subject);
+        subject.getSemesters().add(this);
+    }
+
+    public void removeSubject(Subject subject) {
+        subjects.remove(subject);
+        subject.getSemesters().remove(this);
     }
 }

@@ -37,6 +37,30 @@ public class ScheduleGenerationService {
             if (!managedEntry.getTeacher().isQualifiedFor(managedEntry.getSubject())) {
                 throw new IllegalArgumentException("Teacher is not qualified to teach this subject.");
             }
+            if (!managedEntry.getGroup().getSemester().getId().equals(managedEntry.getSemester().getId())) {
+                throw new IllegalArgumentException("Weekly schedule semester must match the selected group semester.");
+            }
+            Long semesterSubjectMatches = em.createQuery("""
+                    select count(sem)
+                    from Semester sem
+                    join sem.subjects subject
+                    where sem.id = :semesterId
+                    and subject.id = :subjectId
+                    """, Long.class)
+                    .setParameter("semesterId", managedEntry.getSemester().getId())
+                    .setParameter("subjectId", managedEntry.getSubject().getId())
+                    .getSingleResult();
+            if (semesterSubjectMatches == 0) {
+                throw new IllegalArgumentException("Subject is not available in the selected semester.");
+            }
+            if (managedEntry.getMeetingMode() == MeetingMode.CLASSROOM && managedEntry.getRoom() != null) {
+                Long groupSize = em.createQuery("select count(s) from Student s where s.group.id = :groupId", Long.class)
+                        .setParameter("groupId", managedEntry.getGroup().getId())
+                        .getSingleResult();
+                if (managedEntry.getRoom().getCapacity() < groupSize) {
+                    throw new IllegalArgumentException("Room capacity is lower than the selected group size.");
+                }
+            }
             LocalDate date = managedEntry.getSemester().getStartDate();
             LocalDate end = managedEntry.getSemester().getEndDate();
             while (!date.isAfter(end)) {
@@ -49,16 +73,18 @@ public class ScheduleGenerationService {
                                 from RoomBooking rb
                                 where rb.room.id = :roomId
                                 and rb.meetingSlot.date = :date
-                                and rb.meetingSlot.startTime = :start
-                                and rb.meetingSlot.endTime = :end
+                                and rb.bookingStatus <> :cancelled
+                                and rb.meetingSlot.startTime < :end
+                                and rb.meetingSlot.endTime > :start
                                 """, Long.class)
                                 .setParameter("roomId", roomId)
                                 .setParameter("date", slot.getDate())
                                 .setParameter("start", slot.getStartTime())
                                 .setParameter("end", slot.getEndTime())
+                                .setParameter("cancelled", BookingStatus.CANCELLED)
                                 .getSingleResult();
                         if (conflicts > 0) {
-                            throw new IllegalArgumentException("Room is already booked for this time slot.");
+                            throw new IllegalArgumentException("Room is already booked for an overlapping time slot.");
                         }
                     }
                     ClassMeeting meeting = new ClassMeeting(

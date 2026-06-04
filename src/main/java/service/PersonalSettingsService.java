@@ -2,6 +2,7 @@ package service;
 
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.EntityTransaction;
+import model.ActivityLog;
 import model.Notification;
 import model.Person;
 import persistence.JpaUtil;
@@ -19,30 +20,32 @@ public class PersonalSettingsService {
 
     public void addEmail(Long personId, String email) {
         mutateEmails(personId, person -> {
-            validateEmailValue(email);
+            String normalizedEmail = email == null ? null : email.trim();
+            validateEmailValue(normalizedEmail);
             if (person.getEmails().size() >= 3) {
                 throw new IllegalArgumentException("Each person can have at most 3 emails.");
             }
-            ensureEmailIsAvailable(email, personId);
-            person.getEmails().add(email);
+            ensureEmailIsAvailable(normalizedEmail, personId);
+            person.getEmails().add(normalizedEmail);
             if (person.getPrimaryEmailValue() == null || person.getPrimaryEmailValue().isBlank()) {
-                person.setPrimaryEmailValue(email);
+                person.setPrimaryEmailValue(normalizedEmail);
             }
-        });
+        }, "EMAIL_ADDED", "Added email address " + email + ".");
     }
 
     public void editEmail(Long personId, String oldEmail, String newEmail) {
         mutateEmails(personId, person -> {
-            validateEmailValue(newEmail);
+            String normalizedEmail = newEmail == null ? null : newEmail.trim();
+            validateEmailValue(normalizedEmail);
             if (!person.getEmails().remove(oldEmail)) {
                 throw new IllegalArgumentException("Email not found: " + oldEmail);
             }
-            ensureEmailIsAvailable(newEmail, personId);
-            person.getEmails().add(newEmail);
+            ensureEmailIsAvailable(normalizedEmail, personId);
+            person.getEmails().add(normalizedEmail);
             if (oldEmail != null && oldEmail.equals(person.getPrimaryEmailValue())) {
-                person.setPrimaryEmailValue(newEmail);
+                person.setPrimaryEmailValue(normalizedEmail);
             }
-        });
+        }, "EMAIL_UPDATED", "Updated email address from " + oldEmail + " to " + newEmail + ".");
     }
 
     public void deleteEmail(Long personId, String email) {
@@ -56,7 +59,7 @@ public class PersonalSettingsService {
             if (email != null && email.equals(person.getPrimaryEmailValue())) {
                 person.setPrimaryEmailValue(person.getEmails().stream().sorted().findFirst().orElse(null));
             }
-        });
+        }, "EMAIL_DELETED", "Deleted email address " + email + ".");
     }
 
     public void setPrimaryEmail(Long personId, String email) {
@@ -65,14 +68,15 @@ public class PersonalSettingsService {
                 throw new IllegalArgumentException("Primary email must be one of the person's emails.");
             }
             person.setPrimaryEmailValue(email);
-        });
+        }, "PRIMARY_EMAIL_CHANGED", "Set primary email to " + email + ".");
     }
 
     public List<Notification> getNotifications(Long personId) {
         return notificationRepository.findByRecipientId(personId);
     }
 
-    private void mutateEmails(Long personId, java.util.function.Consumer<Person> mutation) {
+    private void mutateEmails(Long personId, java.util.function.Consumer<Person> mutation,
+                              String actionType, String description) {
         EntityManager em = JpaUtil.entityManagerFactory().createEntityManager();
         EntityTransaction tx = em.getTransaction();
         try {
@@ -82,6 +86,7 @@ public class PersonalSettingsService {
                 throw new IllegalArgumentException("Person not found: " + personId);
             }
             mutation.accept(person);
+            em.persist(new ActivityLog(person, actionType, description));
             tx.commit();
         } catch (RuntimeException ex) {
             if (tx.isActive()) {

@@ -35,6 +35,7 @@ public class AdminManagementService {
         validateEmailAvailable(email, null);
         return transactionManager.execute(em -> {
             StudentGroup group = require(em.find(StudentGroup.class, groupId), "Group is required.");
+            assertGroupHasCapacity(em, group.getId());
             Student student = new Student(name, surname, new BirthDate(birthDate), Set.of(email), studentNumber);
             student.setPasswordHash(passwordService.hash(rawPassword));
             student.setPrimaryEmail(email);
@@ -172,10 +173,10 @@ public class AdminManagementService {
         });
     }
 
-    public StudentGroup createGroup(String code, Long semesterId) {
+    public StudentGroup createGroup(String code, Long semesterId, int maxSize) {
         return transactionManager.execute(em -> {
             Semester semester = require(em.find(Semester.class, semesterId), "Semester is required.");
-            StudentGroup group = new StudentGroup(code);
+            StudentGroup group = new StudentGroup(code, maxSize);
             group.setSemester(semester);
             validateEntity(group);
             em.persist(group);
@@ -183,11 +184,13 @@ public class AdminManagementService {
         });
     }
 
-    public void updateGroup(Long id, String code, Long semesterId) {
+    public void updateGroup(Long id, String code, Long semesterId, int maxSize) {
         transactionManager.executeVoid(em -> {
             StudentGroup group = require(em.find(StudentGroup.class, id), "Select a group first.");
             group.setCode(code);
             group.setSemester(require(em.find(Semester.class, semesterId), "Semester is required."));
+            group.setMaxSize(maxSize);
+            assertGroupSizeWithinLimit(em, id, maxSize);
             validateEntity(group);
         });
     }
@@ -242,6 +245,10 @@ public class AdminManagementService {
         transactionManager.executeVoid(em -> {
             Subject subject = require(em.find(Subject.class, subjectId), "Subject is required.");
             StudentGroup group = require(em.find(StudentGroup.class, groupId), "Group is required.");
+            assertSubjectHasQualifiedTeacher(em, subjectId);
+            if (!isSubjectAvailableInSemester(em, subjectId, group.getSemester().getId())) {
+                throw new IllegalArgumentException("Assign the subject to the group's semester before assigning it to the group.");
+            }
             subject.addGroup(group);
         });
     }
@@ -251,6 +258,36 @@ public class AdminManagementService {
             Subject subject = require(em.find(Subject.class, subjectId), "Subject is required.");
             StudentGroup group = require(em.find(StudentGroup.class, groupId), "Group is required.");
             subject.removeGroup(group);
+        });
+    }
+
+    public void assignSubjectToSemester(Long subjectId, Long semesterId) {
+        transactionManager.executeVoid(em -> {
+            Subject subject = require(em.find(Subject.class, subjectId), "Subject is required.");
+            Semester semester = require(em.find(Semester.class, semesterId), "Semester is required.");
+            assertSubjectHasQualifiedTeacher(em, subjectId);
+            semester.addSubject(subject);
+        });
+    }
+
+    public void removeSubjectFromSemester(Long subjectId, Long semesterId) {
+        transactionManager.executeVoid(em -> {
+            Subject subject = require(em.find(Subject.class, subjectId), "Subject is required.");
+            Semester semester = require(em.find(Semester.class, semesterId), "Semester is required.");
+            Long groupAssignments = em.createQuery("""
+                    select count(g)
+                    from StudentGroup g
+                    join g.subjects s
+                    where g.semester.id = :semesterId
+                    and s.id = :subjectId
+                    """, Long.class)
+                    .setParameter("semesterId", semesterId)
+                    .setParameter("subjectId", subjectId)
+                    .getSingleResult();
+            if (groupAssignments > 0) {
+                throw new IllegalArgumentException("Cannot remove a semester subject while it is assigned to groups in that semester.");
+            }
+            semester.removeSubject(subject);
         });
     }
 
@@ -270,6 +307,49 @@ public class AdminManagementService {
         }
         if (personRepository.emailExistsForAnotherPerson(email, personId)) {
             throw new IllegalArgumentException("Email is already used by another person: " + email);
+        }
+    }
+
+    private void assertGroupHasCapacity(EntityManager em, Long groupId) {
+        StudentGroup group = require(em.find(StudentGroup.class, groupId), "Group is required.");
+        long currentSize = count(em, Student.class, "group.id", groupId);
+        if (currentSize >= group.getMaxSize()) {
+            throw new IllegalArgumentException("Group " + group.getCode() + " is full.");
+        }
+    }
+
+    private void assertGroupSizeWithinLimit(EntityManager em, Long groupId, int maxSize) {
+        long currentSize = count(em, Student.class, "group.id", groupId);
+        if (currentSize > maxSize) {
+            throw new IllegalArgumentException("Group already has " + currentSize + " students.");
+        }
+    }
+
+    private boolean isSubjectAvailableInSemester(EntityManager em, Long subjectId, Long semesterId) {
+        Long count = em.createQuery("""
+                select count(sem)
+                from Semester sem
+                join sem.subjects subject
+                where sem.id = :semesterId
+                and subject.id = :subjectId
+                """, Long.class)
+                .setParameter("semesterId", semesterId)
+                .setParameter("subjectId", subjectId)
+                .getSingleResult();
+        return count > 0;
+    }
+
+    private void assertSubjectHasQualifiedTeacher(EntityManager em, Long subjectId) {
+        Long count = em.createQuery("""
+                select count(t)
+                from Teacher t
+                join t.qualifiedSubjects subject
+                where subject.id = :subjectId
+                """, Long.class)
+                .setParameter("subjectId", subjectId)
+                .getSingleResult();
+        if (count < 1) {
+            throw new IllegalArgumentException("Subject must have at least one qualified teacher before it can be used in a semester or group.");
         }
     }
 

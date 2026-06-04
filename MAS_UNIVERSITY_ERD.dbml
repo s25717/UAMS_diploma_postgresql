@@ -4,7 +4,9 @@ Project "University Academic Management System" {
   Defence-ready ERD for the Java/JPA/Hibernate MAS final project.
   The diagram is based on the current entity model: Person, Student, Teacher,
   Administrator, StudentGroup, ClassMeeting, Attendance, reporting, weekly
-  schedules, room bookings, and notifications.
+  schedules, room bookings, notifications, and user activity logs.
+  The physical schema is created by PostgreSQL Flyway migrations, not by
+  Hibernate hbm2ddl generation.
   '''
 }
 
@@ -100,7 +102,7 @@ Table person_emails {
     (person_id, email) [pk]
   }
 
-  Note: "Multi-value Person.emails. Every email is globally unique."
+  Note: "Multi-value Person.emails. Every email is globally unique. PostgreSQL deferred triggers enforce 1 to 3 emails per person."
 }
 
 Table student {
@@ -143,14 +145,26 @@ Table semester {
 Table student_group {
   id bigint [pk, increment]
   code varchar [not null, unique]
+  max_size int [not null]
   semester_id bigint [not null]
 
-  Note: "MAS requirement 4.2.4 is demonstrated by StudentGroup 1 -> 0..* Student."
+  Note: "MAS requirement 4.2.4 is demonstrated by StudentGroup 1 -> 0..* Student. max_size limits group capacity."
 }
 
 Table subject {
   id bigint [pk, increment]
   name varchar [not null, unique]
+}
+
+Table semester_subject {
+  semester_id bigint [not null]
+  subject_id bigint [not null]
+
+  indexes {
+    (semester_id, subject_id) [pk]
+  }
+
+  Note: "Curriculum availability table. A subject must be available in a semester before it can be assigned to a group in that semester or used by a class meeting for that group. Active curriculum subjects must have at least one qualified teacher."
 }
 
 Table subject_group {
@@ -172,7 +186,7 @@ Table teacher_subject {
     (teacher_id, subject_id) [pk]
   }
 
-  Note: "Teacher specialization. A Teacher is qualified for 1 to 5 Subjects."
+  Note: "Teacher specialization. A Teacher is qualified for 1 to 5 Subjects. PostgreSQL deferred triggers enforce the 1..5 cardinality."
 }
 
 Table weekly_schedule_entry {
@@ -189,7 +203,7 @@ Table weekly_schedule_entry {
   online_meeting_link varchar
   semester_id bigint [not null]
 
-  Note: "Recurring weekly template. ClassMeeting represents a concrete generated occurrence."
+  Note: "Recurring weekly template. PostgreSQL deferred triggers enforce teacher-subject qualification and subject-group assignment. ClassMeeting represents a concrete generated occurrence."
 }
 
 Table class_meeting {
@@ -209,13 +223,14 @@ Table class_meeting {
   group_id bigint [not null]
   schedule_entry_id bigint
 
-  Note: "Concrete lesson. Teacher must be qualified for the selected subject."
+  Note: "Concrete lesson. PostgreSQL deferred triggers enforce that the teacher is qualified, the subject belongs to the selected group, the subject is available in the group's semester, the date falls inside the semester period, day_of_week matches meeting_date, valid status transitions are followed, and scheduled/completed classroom meetings have a matching active room booking."
 }
 
 Table attendance {
   id bigint [pk, increment]
   status attendance_status [not null]
   comment varchar
+  registration_time timestamp [not null]
   student_id bigint [not null]
   class_meeting_id bigint [not null]
 
@@ -223,12 +238,13 @@ Table attendance {
     (student_id, class_meeting_id) [unique]
   }
 
-  Note: "One attendance record per student per class meeting."
+  Note: "One attendance record per student per class meeting. PostgreSQL enforces that the student belongs to the class meeting group."
 }
 
 Table attendance_report {
   id bigint [pk, increment]
   generated_on date [not null]
+  exported_at timestamp
   report_type report_type [not null]
   date_from date
   date_to date
@@ -238,7 +254,7 @@ Table attendance_report {
   group_id bigint
   overall_performance_percentage decimal
 
-  Note: "Stores flexible report filters. Null filters mean unrestricted criteria."
+  Note: "Stores flexible report filters. Null filters mean unrestricted criteria. After exported_at is set, PostgreSQL triggers make the report snapshot immutable."
 }
 
 Table attendance_report_semesters {
@@ -285,7 +301,7 @@ Table room_booking {
     (room_id, date, start_time, end_time) [unique]
   }
 
-  Note: "Qualified association: Room [MeetingSlot=date+start_time+end_time] -> RoomBooking."
+  Note: "Qualified association: Room [MeetingSlot=date+start_time+end_time] -> RoomBooking. PostgreSQL enforces non-overlapping active bookings with a GiST exclusion constraint and requires active class-meeting bookings to match the meeting date/start/end."
 }
 
 Table notification {
@@ -295,7 +311,8 @@ Table notification {
   message varchar [not null]
   priority int [not null]
   status notification_status [not null]
-  recipient_id bigint
+  created_at timestamp [not null]
+  recipient_id bigint [not null]
   has_attachment boolean [note: "EmailNotification-specific attribute"]
   display_seconds int [note: "SystemNotification-specific attribute"]
 
@@ -310,11 +327,26 @@ Table scheduled_notification_task {
   processed_at timestamp
   retry_count int [not null]
   failure_reason varchar
-  recipient_id bigint
+  recipient_id bigint [not null]
   class_meeting_id bigint
   attendance_report_id bigint
 
-  Note: "Persistent task processed by SystemScheduler."
+  Note: "Persistent task processed by SystemScheduler. New task rows require a recipient and only PENDING due tasks are processed. PostgreSQL enforces PENDING -> PROCESSING -> SENT/FAILED lifecycle transitions, processed timestamps, failure reasons, and task-specific payload links."
+}
+
+Table user_activity_log {
+  id bigint [pk, increment]
+  occurred_at timestamp [not null]
+  action_type varchar [not null]
+  description varchar [not null]
+  actor_id bigint [not null]
+
+  indexes {
+    (actor_id, occurred_at)
+    action_type
+  }
+
+  Note: "Audit trail for actions performed by a user, for example adding, editing, deleting, or changing the primary email."
 }
 
 Ref: person_emails.person_id > person.id
@@ -322,6 +354,9 @@ Ref: person_emails.person_id > person.id
 Ref: student.group_id > student_group.id
 Ref: semester.field_id > field_of_study.id
 Ref: student_group.semester_id > semester.id
+
+Ref: semester_subject.semester_id > semester.id
+Ref: semester_subject.subject_id > subject.id
 
 Ref: subject_group.subject_id > subject.id
 Ref: subject_group.group_id > student_group.id
@@ -359,3 +394,5 @@ Ref: notification.recipient_id > person.id
 Ref: scheduled_notification_task.recipient_id > person.id
 Ref: scheduled_notification_task.class_meeting_id > class_meeting.id
 Ref: scheduled_notification_task.attendance_report_id > attendance_report.id
+
+Ref: user_activity_log.actor_id > person.id

@@ -48,9 +48,62 @@ public class WeeklyScheduleEntryRepository extends GenericRepository<WeeklySched
                     entry.getOnlineMeetingLink(),
                     em.getReference(Semester.class, entry.getSemester().getId())
             );
+            validateBusinessRules(em, entry);
             em.persist(managed);
             return managed;
         });
+    }
+
+    private void validateBusinessRules(EntityManager em, WeeklyScheduleEntry entry) {
+        Long groupSemesterMatches = em.createQuery("""
+                select count(g)
+                from StudentGroup g
+                where g.id = :groupId
+                and g.semester.id = :semesterId
+                """, Long.class)
+                .setParameter("groupId", entry.getGroup().getId())
+                .setParameter("semesterId", entry.getSemester().getId())
+                .getSingleResult();
+        if (groupSemesterMatches == 0) {
+            throw new IllegalArgumentException("Weekly schedule semester must match the selected group semester.");
+        }
+        Long semesterSubjectMatches = em.createQuery("""
+                select count(sem)
+                from Semester sem
+                join sem.subjects subject
+                where sem.id = :semesterId
+                and subject.id = :subjectId
+                """, Long.class)
+                .setParameter("semesterId", entry.getSemester().getId())
+                .setParameter("subjectId", entry.getSubject().getId())
+                .getSingleResult();
+        if (semesterSubjectMatches == 0) {
+            throw new IllegalArgumentException("Subject is not available in the selected semester.");
+        }
+        Long groupSubjectMatches = em.createQuery("""
+                select count(g)
+                from StudentGroup g
+                join g.subjects subject
+                where g.id = :groupId
+                and subject.id = :subjectId
+                """, Long.class)
+                .setParameter("groupId", entry.getGroup().getId())
+                .setParameter("subjectId", entry.getSubject().getId())
+                .getSingleResult();
+        if (groupSubjectMatches == 0) {
+            throw new IllegalArgumentException("Subject is not assigned to the selected group.");
+        }
+        if (entry.getRoom() != null) {
+            Integer capacity = em.createQuery("select r.capacity from Room r where r.id = :roomId", Integer.class)
+                    .setParameter("roomId", entry.getRoom().getId())
+                    .getSingleResult();
+            Long groupSize = em.createQuery("select count(s) from Student s where s.group.id = :groupId", Long.class)
+                    .setParameter("groupId", entry.getGroup().getId())
+                    .getSingleResult();
+            if (capacity < groupSize) {
+                throw new IllegalArgumentException("Room capacity is lower than the selected group size.");
+            }
+        }
     }
 
     public List<WeeklyScheduleEntry> findByTeacherIdWithDetails(Long teacherId) {

@@ -16,6 +16,8 @@ import jakarta.validation.constraints.Size;
 import jakarta.validation.constraints.NotNull;
 import model.enums.AttendanceStatus;
 
+import java.time.LocalDateTime;
+
 @Entity
 @Table(uniqueConstraints = @UniqueConstraint(columnNames = {"student_id", "class_meeting_id"}))
 public class Attendance {
@@ -40,6 +42,10 @@ public class Attendance {
 
     @Size(max = 1000)
     private String comment;
+
+    @NotNull
+    @Column(nullable = false)
+    private LocalDateTime registrationTime = LocalDateTime.now();
 
     protected Attendance() {
     }
@@ -88,5 +94,13 @@ public class Attendance {
 
     public void setComment(String comment) {
         this.comment = comment;
+    }
+
+    public LocalDateTime getRegistrationTime() {
+        return registrationTime;
+    }
+
+    public void setRegistrationTime(LocalDateTime registrationTime) {
+        this.registrationTime = registrationTime;
     }
 }

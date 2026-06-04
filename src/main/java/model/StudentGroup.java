@@ -9,6 +9,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.ManyToMany;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.OneToMany;
+import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 
@@ -24,6 +25,10 @@ public class StudentGroup {
     @NotBlank
     @Column(nullable = false, unique = true)
     private String code;
+
+    @Min(1)
+    @Column(nullable = false)
+    private int maxSize = 30;
 
     @NotNull
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
@@ -48,6 +53,11 @@ public class StudentGroup {
         this.code = code;
     }
 
+    public StudentGroup(String code, int maxSize) {
+        this.code = code;
+        this.maxSize = maxSize;
+    }
+
     public Long getId() {
         return id;
     }
@@ -62,6 +72,14 @@ public class StudentGroup {
 
     public void setCode(String code) {
         this.code = code;
+    }
+
+    public int getMaxSize() {
+        return maxSize;
+    }
+
+    public void setMaxSize(int maxSize) {
+        this.maxSize = maxSize;
     }
 
     public Semester getSemester() {
@@ -105,6 +123,9 @@ public class StudentGroup {
     }
 
     public void addStudent(Student student) {
+        if (students.size() >= maxSize && !students.contains(student)) {
+            throw new IllegalArgumentException("Student group maximum size has been reached.");
+        }
         students.add(student);
         student.setGroup(this);
     }

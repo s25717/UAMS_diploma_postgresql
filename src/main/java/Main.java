@@ -18,6 +18,7 @@ import model.Teacher;
 import model.enums.AttendanceStatus;
 import model.enums.BookingStatus;
 import model.enums.ClassType;
+import model.enums.MeetingMode;
 import model.enums.NotificationTaskType;
 import model.enums.ReportType;
 import model.value.BirthDate;
@@ -28,10 +29,8 @@ import persistence.GenericRepository;
 import persistence.JpaUtil;
 import persistence.StudentGroupRepository;
 
-import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.LocalTime;
-import java.util.List;
 import java.util.Set;
 
 public class Main {
@@ -106,14 +105,18 @@ public class Main {
             );
 
             Subject databases = new Subject("Databases");
+            semester.addSubject(databases);
             databases.addGroup(group);
             teacher.addQualifiedSubject(databases);
 
+            LocalDate demoMeetingDate = LocalDate.now().minusWeeks(1);
             ClassMeeting meeting = new ClassMeeting(
+                    demoMeetingDate,
                     "A101",
                     null,
-                    new MeetingTime(DayOfWeek.MONDAY, LocalTime.of(10, 0), LocalTime.of(11, 30)),
+                    new MeetingTime(demoMeetingDate.getDayOfWeek(), LocalTime.of(10, 0), LocalTime.of(11, 30)),
                     ClassType.LABORATORY,
+                    MeetingMode.CLASSROOM,
                     databases,
                     teacher,
                     group
@@ -124,7 +127,7 @@ public class Main {
 
             Room room = new Room("A101", 30);
             RoomBooking roomBooking = new RoomBooking(
-                    new MeetingSlot(LocalDate.now(), LocalTime.of(10, 0), LocalTime.of(11, 30)),
+                    new MeetingSlot(demoMeetingDate, LocalTime.of(10, 0), LocalTime.of(11, 30)),
                     BookingStatus.CONFIRMED,
                     room,
                     meeting
@@ -135,6 +138,7 @@ public class Main {
             Attendance annaAttendance = new Attendance(AttendanceStatus.LATE, anna, meeting);
             meeting.addAttendance(janAttendance);
             meeting.addAttendance(annaAttendance);
+            meeting.complete();
 
             AttendanceReport report = new AttendanceReport(LocalDate.now(), ReportType.COMBINED);
             report.setGroup(group);
@@ -151,9 +155,16 @@ public class Main {
             em.persist(teacher);
             em.persist(databases);
             em.persist(report);
-            em.persist(new EmailNotification("Class room changed", 2, true));
-            em.persist(new SystemNotification("Attendance report generated", 3, 60));
-            em.persist(new ScheduledNotificationTask(NotificationTaskType.REPORT_READY, java.time.LocalDateTime.now()));
+            EmailNotification emailNotification = new EmailNotification("Class room changed", 2, true);
+            emailNotification.setRecipient(teacher);
+            SystemNotification systemNotification = new SystemNotification("Attendance report generated", 3, 60);
+            systemNotification.setRecipient(teacher);
+            em.persist(emailNotification);
+            em.persist(systemNotification);
+            ScheduledNotificationTask task = new ScheduledNotificationTask(NotificationTaskType.REPORT_READY, java.time.LocalDateTime.now());
+            task.setRecipient(teacher);
+            task.setAttendanceReport(report);
+            em.persist(task);
 
             tx.commit();
             return new DemoIds(group.getId(), meeting.getId(), jan.getId(), annaAttendance.getId());
@@ -168,33 +179,31 @@ public class Main {
     }
 
     private static void clearDatabase(EntityManager em) {
-        em.createNativeQuery("SET REFERENTIAL_INTEGRITY FALSE").executeUpdate();
-        for (String tableName : List.of(
-                "Attendance",
-                "ReportLine",
-                "AttendanceReport",
-                "ClassMeeting",
-                "WeeklyScheduleEntry",
-                "subject_group",
-                "teacher_subject",
-                "attendance_report_semesters",
-                "person_emails",
-                "RoomBooking",
-                "ScheduledNotificationTask",
-                "Student",
-                "Teacher",
-                "Administrator",
-                "Person",
-                "Subject",
-                "StudentGroup",
-                "Semester",
-                "Field",
-                "Notification",
-                "Room"
-        )) {
-            em.createNativeQuery("TRUNCATE TABLE " + tableName + " RESTART IDENTITY").executeUpdate();
-        }
-        em.createNativeQuery("SET REFERENTIAL_INTEGRITY TRUE").executeUpdate();
+        em.createNativeQuery("""
+                TRUNCATE TABLE
+                    attendance,
+                    report_line,
+                    attendance_report,
+                    attendance_report_semesters,
+                    class_meeting,
+                    weekly_schedule_entry,
+                    subject_group,
+                    teacher_subject,
+                    person_emails,
+                    room_booking,
+                    scheduled_notification_task,
+                    student,
+                    teacher,
+                    administrator,
+                    notification,
+                    room,
+                    subject,
+                    student_group,
+                    semester,
+                    field_of_study,
+                    person
+                RESTART IDENTITY CASCADE
+                """).executeUpdate();
     }
 
     private record DemoIds(Long groupId, Long meetingId, Long studentToRemoveId, Long attendanceToRemoveId) {

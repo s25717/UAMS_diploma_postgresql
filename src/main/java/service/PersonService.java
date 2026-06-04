@@ -1,6 +1,7 @@
 package service;
 
 import model.Person;
+import model.ActivityLog;
 import persistence.JpaUtil;
 import persistence.PersonRepository;
 
@@ -57,6 +58,7 @@ public class PersonService {
                 throw new IllegalArgumentException("Old password is incorrect.");
             }
             person.setPasswordHash(passwordService.hash(newPassword));
+            em.persist(new ActivityLog(person, "PASSWORD_CHANGED", "Changed account password."));
             tx.commit();
         } catch (RuntimeException ex) {
             if (tx.isActive()) {

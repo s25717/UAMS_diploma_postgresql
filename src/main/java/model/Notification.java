@@ -17,6 +17,8 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import model.enums.NotificationStatus;
 
+import java.time.LocalDateTime;
+
 @Entity
 @Inheritance(strategy = InheritanceType.SINGLE_TABLE)
 @DiscriminatorColumn(name = "notification_type")
@@ -42,6 +44,10 @@ public abstract class Notification {
 
     @ManyToOne(fetch = FetchType.LAZY)
     private Person recipient;
+
+    @NotNull
+    @Column(nullable = false)
+    private LocalDateTime createdAt = LocalDateTime.now();
 
     protected Notification() {
     }
@@ -98,6 +104,14 @@ public abstract class Notification {
 
     public void setRecipient(Person recipient) {
         this.recipient = recipient;
+    }
+
+    public LocalDateTime getCreatedAt() {
+        return createdAt;
+    }
+
+    public void setCreatedAt(LocalDateTime createdAt) {
+        this.createdAt = createdAt;
     }
 
     public abstract int calculateDeliveryEffort();

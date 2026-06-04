@@ -3,11 +3,13 @@ package service;
 import model.AttendanceReport;
 import model.ReportLine;
 import model.Semester;
+import persistence.JpaUtil;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.LocalDateTime;
 import java.util.Comparator;
 import java.util.List;
 import java.util.stream.Collectors;
@@ -61,9 +63,42 @@ public class ReportExportService {
                 Files.createDirectories(parent);
             }
             Files.writeString(targetFile, csv.toString(), StandardCharsets.UTF_8);
+            markExported(report);
             return targetFile;
         } catch (IOException ex) {
             throw new IllegalArgumentException("Cannot export report: " + ex.getMessage(), ex);
+        }
+    }
+
+    private void markExported(AttendanceReport report) {
+        if (report.getId() == null || report.getExportedAt() != null) {
+            return;
+        }
+        var em = JpaUtil.entityManagerFactory().createEntityManager();
+        var tx = em.getTransaction();
+        try {
+            tx.begin();
+            LocalDateTime exportedAt = LocalDateTime.now();
+            int updated = em.createQuery("""
+                    update AttendanceReport report
+                    set report.exportedAt = :exportedAt
+                    where report.id = :id
+                    and report.exportedAt is null
+                    """)
+                    .setParameter("exportedAt", exportedAt)
+                    .setParameter("id", report.getId())
+                    .executeUpdate();
+            tx.commit();
+            if (updated > 0) {
+                report.setExportedAt(exportedAt);
+            }
+        } catch (RuntimeException ex) {
+            if (tx.isActive()) {
+                tx.rollback();
+            }
+            throw ex;
+        } finally {
+            em.close();
         }
     }
 

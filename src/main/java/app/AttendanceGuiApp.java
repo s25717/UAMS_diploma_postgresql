@@ -35,6 +35,7 @@ import javafx.stage.FileChooser;
 import javafx.stage.Stage;
 import javafx.util.StringConverter;
 import model.Administrator;
+import model.ActivityLog;
 import model.Attendance;
 import model.AttendanceReport;
 import model.ClassMeeting;
@@ -44,6 +45,7 @@ import model.Person;
 import model.ReportLine;
 import model.Room;
 import model.RoomBooking;
+import model.ScheduledNotificationTask;
 import model.Semester;
 import model.Student;
 import model.StudentGroup;
@@ -58,11 +60,16 @@ import model.enums.MeetingMode;
 import model.enums.NotificationStatus;
 import model.value.MeetingSlot;
 import model.value.MeetingTime;
+import persistence.ActivityLogRepository;
 import persistence.AttendanceRepository;
+import persistence.AttendanceReportRepository;
 import persistence.ClassMeetingRepository;
 import persistence.GenericRepository;
 import persistence.JpaUtil;
+import persistence.NotificationRepository;
 import persistence.PersonRepository;
+import persistence.RoomBookingRepository;
+import persistence.ScheduledNotificationTaskRepository;
 import persistence.StudentGroupRepository;
 import persistence.TeacherRepository;
 import persistence.WeeklyScheduleEntryRepository;
@@ -104,6 +111,11 @@ public class AttendanceGuiApp extends Application {
     private final ClassMeetingService classMeetingService = new ClassMeetingService();
     private final ClassMeetingRepository classMeetingRepository = new ClassMeetingRepository();
     private final AttendanceRepository attendanceRepository = new AttendanceRepository();
+    private final ActivityLogRepository activityLogRepository = new ActivityLogRepository();
+    private final AttendanceReportRepository attendanceReportRepository = new AttendanceReportRepository();
+    private final RoomBookingRepository roomBookingRepository = new RoomBookingRepository();
+    private final NotificationRepository notificationRepository = new NotificationRepository();
+    private final ScheduledNotificationTaskRepository scheduledNotificationTaskRepository = new ScheduledNotificationTaskRepository();
     private final NotificationManagementService notificationManagementService = new NotificationManagementService();
     private final PersonalSettingsService personalSettingsService = new PersonalSettingsService();
     private final ScheduleAccessService scheduleAccessService = new ScheduleAccessService();
@@ -450,10 +462,11 @@ public class AttendanceGuiApp extends Application {
 
         Button add = new Button("Add Email");
         add.setOnAction(event -> runWithMessage(message, () -> {
-            personalSettingsService.addEmail(user.getId(), emailField.getText());
-            user.getEmails().add(emailField.getText());
+            String newEmail = emailField.getText().trim();
+            personalSettingsService.addEmail(user.getId(), newEmail);
+            user.getEmails().add(newEmail);
             if (user.getPrimaryEmailValue() == null || user.getPrimaryEmailValue().isBlank()) {
-                user.setPrimaryEmail(emailField.getText());
+                user.setPrimaryEmail(newEmail);
             }
             emails.setAll(user.getEmails());
             primaryEmailLabel.setText("Primary email: " + user.getPrimaryEmail());
@@ -463,11 +476,12 @@ public class AttendanceGuiApp extends Application {
         Button edit = new Button("Edit Selected Email");
         edit.setOnAction(event -> runWithMessage(message, () -> {
             String selected = emailList.getSelectionModel().getSelectedItem();
-            personalSettingsService.editEmail(user.getId(), selected, emailField.getText());
+            String newEmail = emailField.getText().trim();
+            personalSettingsService.editEmail(user.getId(), selected, newEmail);
             user.getEmails().remove(selected);
-            user.getEmails().add(emailField.getText());
+            user.getEmails().add(newEmail);
             if (selected != null && selected.equals(user.getPrimaryEmailValue())) {
-                user.setPrimaryEmail(emailField.getText());
+                user.setPrimaryEmail(newEmail);
             }
             emails.setAll(user.getEmails());
             primaryEmailLabel.setText("Primary email: " + user.getPrimaryEmail());
@@ -662,6 +676,24 @@ public class AttendanceGuiApp extends Application {
     }
 
     private Node createMyHistoryView() {
+        TabPane tabs = new TabPane();
+        tabs.getTabs().add(new Tab("Class Meetings", createClassMeetingHistoryView()));
+        tabs.getTabs().add(new Tab("Activity Logs", createActivityLogHistoryView()));
+        if (authenticationService.isTeacher()) {
+            tabs.getTabs().add(new Tab("Room Bookings", createTeacherRoomBookingHistoryView()));
+        }
+        if (authenticationService.isAdmin()) {
+            tabs.getTabs().add(new Tab("Attendance", createAdminAttendanceHistoryView()));
+            tabs.getTabs().add(new Tab("Reports", createAdminReportHistoryView()));
+            tabs.getTabs().add(new Tab("Room Bookings", createAdminRoomBookingHistoryView()));
+            tabs.getTabs().add(new Tab("Notifications", createAdminNotificationHistoryView()));
+            tabs.getTabs().add(new Tab("Notification Tasks", createAdminNotificationTaskHistoryView()));
+        }
+        tabs.getTabs().forEach(tab -> tab.setClosable(false));
+        return tabs;
+    }
+
+    private Node createClassMeetingHistoryView() {
         if (authenticationService.isStudent()) {
             return meetingListPage(classMeetingRepository.findClassMeetingHistoryForStudent(currentUser().getId()), "Student history is derived through Student -> StudentGroup -> ClassMeeting.");
         }
@@ -669,6 +701,181 @@ public class AttendanceGuiApp extends Application {
             return meetingListPage(classMeetingRepository.findClassMeetingHistoryForTeacher(currentUser().getId()), "Teacher history is derived through Teacher -> ClassMeeting.");
         }
         return meetingListPage(classMeetingRepository.findAllWithBasicData(), "Administrator can view all class meeting history.");
+    }
+
+    private Node createActivityLogHistoryView() {
+        ListView<ActivityLog> list = new ListView<>(FXCollections.observableArrayList(
+                activityLogRepository.findByActorId(currentUser().getId())
+        ));
+        list.setCellFactory(view -> activityLogCell());
+        Button refresh = new Button("Refresh");
+        refresh.setOnAction(event -> list.setItems(FXCollections.observableArrayList(
+                activityLogRepository.findByActorId(currentUser().getId())
+        )));
+        VBox box = new VBox(10,
+                new Label("Actions performed by " + currentUser().getName() + " " + currentUser().getSurname()),
+                refresh,
+                list
+        );
+        box.setPadding(new Insets(12));
+        VBox.setVgrow(list, Priority.ALWAYS);
+        return box;
+    }
+
+    private ListCell<ActivityLog> activityLogCell() {
+        return new ListCell<>() {
+            @Override
+            protected void updateItem(ActivityLog log, boolean empty) {
+                super.updateItem(log, empty);
+                if (empty || log == null) {
+                    setText(null);
+                    return;
+                }
+                setText(log.getOccurredAt() + " | " + log.getActionType() + " | " + log.getDescription());
+            }
+        };
+    }
+
+    private Node createAdminAttendanceHistoryView() {
+        ListView<Attendance> list = new ListView<>(FXCollections.observableArrayList(attendanceRepository.findAllWithStudentAndClassMeeting()));
+        list.setCellFactory(view -> new ListCell<>() {
+            @Override
+            protected void updateItem(Attendance attendance, boolean empty) {
+                super.updateItem(attendance, empty);
+                if (empty || attendance == null) {
+                    setText(null);
+                    return;
+                }
+                ClassMeeting meeting = attendance.getClassMeeting();
+                setText(attendance.getRegistrationTime() + " | " + attendance.getStudent().getName() + " "
+                        + attendance.getStudent().getSurname() + " | " + meeting.getSubject().getName()
+                        + " | " + meeting.getMeetingDate() + " | " + attendance.getStatus());
+            }
+        });
+        VBox box = new VBox(10, new Label("All attendance records"), list);
+        box.setPadding(new Insets(12));
+        VBox.setVgrow(list, Priority.ALWAYS);
+        return box;
+    }
+
+    private Node createAdminReportHistoryView() {
+        ListView<AttendanceReport> list = new ListView<>(FXCollections.observableArrayList(attendanceReportRepository.findAllWithDetails()));
+        list.setCellFactory(view -> new ListCell<>() {
+            @Override
+            protected void updateItem(AttendanceReport report, boolean empty) {
+                super.updateItem(report, empty);
+                if (empty || report == null) {
+                    setText(null);
+                    return;
+                }
+                setText(report.getGeneratedOn() + " | " + report.getReportType()
+                        + " | lines " + report.getReportLines().size()
+                        + " | overall " + String.format(java.util.Locale.US, "%.2f%%", report.getOverallPerformancePercentage())
+                        + (report.getExportedAt() == null ? " | not exported" : " | exported " + report.getExportedAt()));
+            }
+        });
+        VBox box = new VBox(10, new Label("Generated report snapshots"), list);
+        box.setPadding(new Insets(12));
+        VBox.setVgrow(list, Priority.ALWAYS);
+        return box;
+    }
+
+    private Node createAdminRoomBookingHistoryView() {
+        ListView<RoomBooking> list = new ListView<>(FXCollections.observableArrayList(roomBookingRepository.findAllWithDetails()));
+        list.setCellFactory(view -> new ListCell<>() {
+            @Override
+            protected void updateItem(RoomBooking booking, boolean empty) {
+                super.updateItem(booking, empty);
+                if (empty || booking == null) {
+                    setText(null);
+                    return;
+                }
+                String meeting = booking.getClassMeeting() == null ? "manual booking"
+                        : booking.getClassMeeting().getSubject().getName() + " | group " + booking.getClassMeeting().getGroup().getCode();
+                setText(booking.getBookingStatus() + " | room " + booking.getRoom().getRoomNumber()
+                        + " | " + booking.getMeetingSlot().getDate()
+                        + " " + booking.getMeetingSlot().getStartTime() + "-" + booking.getMeetingSlot().getEndTime()
+                        + " | " + meeting);
+            }
+        });
+        VBox box = new VBox(10, new Label("All room booking history"), list);
+        box.setPadding(new Insets(12));
+        VBox.setVgrow(list, Priority.ALWAYS);
+        return box;
+    }
+
+    private Node createTeacherRoomBookingHistoryView() {
+        ListView<RoomBooking> list = new ListView<>(FXCollections.observableArrayList(
+                roomBookingRepository.findRoomBookingHistoryForTeacher(currentUser().getId())
+        ));
+        list.setCellFactory(view -> roomBookingHistoryCell());
+        VBox box = new VBox(10, new Label("Room bookings for assigned class meetings"), list);
+        box.setPadding(new Insets(12));
+        VBox.setVgrow(list, Priority.ALWAYS);
+        return box;
+    }
+
+    private ListCell<RoomBooking> roomBookingHistoryCell() {
+        return new ListCell<>() {
+            @Override
+            protected void updateItem(RoomBooking booking, boolean empty) {
+                super.updateItem(booking, empty);
+                if (empty || booking == null) {
+                    setText(null);
+                    return;
+                }
+                String meeting = booking.getClassMeeting() == null ? "manual booking"
+                        : booking.getClassMeeting().getSubject().getName() + " | group " + booking.getClassMeeting().getGroup().getCode();
+                setText(booking.getBookingStatus() + " | room " + booking.getRoom().getRoomNumber()
+                        + " | " + booking.getMeetingSlot().getDate()
+                        + " " + booking.getMeetingSlot().getStartTime() + "-" + booking.getMeetingSlot().getEndTime()
+                        + " | " + meeting);
+            }
+        };
+    }
+
+    private Node createAdminNotificationHistoryView() {
+        ListView<Notification> list = new ListView<>(FXCollections.observableArrayList(notificationRepository.findAllWithRecipients()));
+        list.setCellFactory(view -> new ListCell<>() {
+            @Override
+            protected void updateItem(Notification notification, boolean empty) {
+                super.updateItem(notification, empty);
+                if (empty || notification == null) {
+                    setText(null);
+                    return;
+                }
+                String recipient = notification.getRecipient() == null ? "no recipient"
+                        : notification.getRecipient().getName() + " " + notification.getRecipient().getSurname();
+                setText(notification.getCreatedAt() + " | " + notification.getStatus() + " | " + recipient + " | " + notification.getTitle());
+            }
+        });
+        VBox box = new VBox(10, new Label("All notifications"), list);
+        box.setPadding(new Insets(12));
+        VBox.setVgrow(list, Priority.ALWAYS);
+        return box;
+    }
+
+    private Node createAdminNotificationTaskHistoryView() {
+        ListView<ScheduledNotificationTask> list = new ListView<>(FXCollections.observableArrayList(scheduledNotificationTaskRepository.findAllWithDetails()));
+        list.setCellFactory(view -> new ListCell<>() {
+            @Override
+            protected void updateItem(ScheduledNotificationTask task, boolean empty) {
+                super.updateItem(task, empty);
+                if (empty || task == null) {
+                    setText(null);
+                    return;
+                }
+                String recipient = task.getRecipient() == null ? "no recipient"
+                        : task.getRecipient().getName() + " " + task.getRecipient().getSurname();
+                setText(task.getScheduledAt() + " | " + task.getTaskType() + " | " + task.getStatus()
+                        + " | " + recipient + " | retries " + task.getRetryCount()
+                        + (task.getFailureReason() == null ? "" : " | " + task.getFailureReason()));
+            }
+        });
+        VBox box = new VBox(10, new Label("All scheduled notification tasks"), list);
+        box.setPadding(new Insets(12));
+        VBox.setVgrow(list, Priority.ALWAYS);
+        return box;
     }
 
     private Node createStudentAttendanceView() {
@@ -924,11 +1131,13 @@ public class AttendanceGuiApp extends Application {
             @Override
             protected void updateItem(StudentGroup group, boolean empty) {
                 super.updateItem(group, empty);
-                setText(empty || group == null ? null : group.getCode());
+                setText(empty || group == null ? null : group.getCode() + " | max " + group.getMaxSize());
             }
         });
         TextField groupCode = new TextField();
         groupCode.setPromptText("group code");
+        TextField groupMaxSize = new TextField("30");
+        groupMaxSize.setPromptText("max size");
         ComboBox<Semester> groupSemester = new ComboBox<>(semesters);
         groupSemester.setConverter(converter(semester -> "Semester " + semester.getNumber()));
 
@@ -944,6 +1153,8 @@ public class AttendanceGuiApp extends Application {
         subjectName.setPromptText("subject name");
         ComboBox<StudentGroup> subjectGroup = new ComboBox<>(groups);
         subjectGroup.setConverter(converter(StudentGroup::getCode));
+        ComboBox<Semester> subjectSemester = new ComboBox<>(semesters);
+        subjectSemester.setConverter(converter(semester -> "Semester " + semester.getNumber()));
 
         Label message = new Label();
         Runnable refresh = () -> {
@@ -969,6 +1180,7 @@ public class AttendanceGuiApp extends Application {
         groupList.getSelectionModel().selectedItemProperty().addListener((observable, oldValue, selected) -> {
             if (selected != null) {
                 groupCode.setText(selected.getCode());
+                groupMaxSize.setText(String.valueOf(selected.getMaxSize()));
                 groupSemester.setValue(selected.getSemester());
             }
         });
@@ -1026,7 +1238,7 @@ public class AttendanceGuiApp extends Application {
         Button createGroup = new Button("Create Group");
         createGroup.setOnAction(event -> runWithMessage(message, () -> {
             Semester semester = groupSemester.getValue();
-            adminManagementService.createGroup(groupCode.getText(), semester == null ? null : semester.getId());
+            adminManagementService.createGroup(groupCode.getText(), semester == null ? null : semester.getId(), Integer.parseInt(groupMaxSize.getText()));
             refresh.run();
             return "Group created.";
         }));
@@ -1034,7 +1246,8 @@ public class AttendanceGuiApp extends Application {
         updateGroup.setOnAction(event -> runWithMessage(message, () -> {
             StudentGroup selected = groupList.getSelectionModel().getSelectedItem();
             Semester semester = groupSemester.getValue();
-            adminManagementService.updateGroup(selected == null ? null : selected.getId(), groupCode.getText(), semester == null ? null : semester.getId());
+            adminManagementService.updateGroup(selected == null ? null : selected.getId(), groupCode.getText(),
+                    semester == null ? null : semester.getId(), Integer.parseInt(groupMaxSize.getText()));
             refresh.run();
             return "Group updated.";
         }));
@@ -1082,14 +1295,31 @@ public class AttendanceGuiApp extends Application {
             refresh.run();
             return "Subject removed from group.";
         }));
+        Button assignSubjectSemester = new Button("Assign Subject To Semester");
+        assignSubjectSemester.setOnAction(event -> runWithMessage(message, () -> {
+            Subject subject = subjectList.getSelectionModel().getSelectedItem();
+            Semester semester = subjectSemester.getValue();
+            adminManagementService.assignSubjectToSemester(subject == null ? null : subject.getId(), semester == null ? null : semester.getId());
+            refresh.run();
+            return "Subject assigned to semester.";
+        }));
+        Button removeSubjectSemester = new Button("Remove Subject From Semester");
+        removeSubjectSemester.setOnAction(event -> runWithMessage(message, () -> {
+            Subject subject = subjectList.getSelectionModel().getSelectedItem();
+            Semester semester = subjectSemester.getValue();
+            adminManagementService.removeSubjectFromSemester(subject == null ? null : subject.getId(), semester == null ? null : semester.getId());
+            refresh.run();
+            return "Subject removed from semester.";
+        }));
 
         VBox fieldBox = new VBox(8, new Label("Fields of study"), fieldList, fieldName, new HBox(8, createField, updateField, deleteField));
         VBox semesterBox = new VBox(8, new Label("Semesters"), semesterList, semesterNumber,
                 new HBox(8, new Label("From"), semesterStart, new Label("To"), semesterEnd), semesterField,
                 new HBox(8, createSemester, updateSemester, deleteSemester));
-        VBox groupBox = new VBox(8, new Label("Groups"), groupList, groupCode, groupSemester, new HBox(8, createGroup, updateGroup, deleteGroup));
+        VBox groupBox = new VBox(8, new Label("Groups"), groupList, groupCode, groupMaxSize, groupSemester, new HBox(8, createGroup, updateGroup, deleteGroup));
         VBox subjectBox = new VBox(8, new Label("Subjects"), subjectList, subjectName,
                 new HBox(8, createSubject, updateSubject, deleteSubject),
+                new Label("Subject-semester curriculum"), subjectSemester, new HBox(8, assignSubjectSemester, removeSubjectSemester),
                 new Label("Subject-group assignment"), subjectGroup, new HBox(8, assignSubjectGroup, removeSubjectGroup));
 
         HBox columns = new HBox(12, fieldBox, semesterBox, groupBox, subjectBox);
@@ -1239,7 +1469,10 @@ public class AttendanceGuiApp extends Application {
         TextField endField = new TextField("11:30");
         TextField locationField = new TextField();
         TextField linkField = new TextField();
-        ComboBox<ClassMeetingStatus> statusBox = new ComboBox<>(FXCollections.observableArrayList(ClassMeetingStatus.values()));
+        ComboBox<ClassMeetingStatus> statusBox = new ComboBox<>(FXCollections.observableArrayList(
+                ClassMeetingStatus.DRAFT,
+                ClassMeetingStatus.SCHEDULED
+        ));
         statusBox.getSelectionModel().select(adminMode ? ClassMeetingStatus.DRAFT : ClassMeetingStatus.SCHEDULED);
 
         teacherBox.setConverter(converter(teacher -> teacher.getName() + " " + teacher.getSurname()));

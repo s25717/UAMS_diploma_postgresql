@@ -40,6 +40,9 @@ public class Subject {
     @ManyToMany(mappedBy = "qualifiedSubjects", fetch = FetchType.LAZY)
     private Set<Teacher> qualifiedTeachers = new HashSet<>();
 
+    @ManyToMany(mappedBy = "subjects", fetch = FetchType.LAZY)
+    private Set<Semester> semesters = new HashSet<>();
+
     protected Subject() {
     }
 
@@ -85,6 +88,14 @@ public class Subject {
 
     public void setQualifiedTeachers(Set<Teacher> qualifiedTeachers) {
         this.qualifiedTeachers = qualifiedTeachers;
+    }
+
+    public Set<Semester> getSemesters() {
+        return semesters;
+    }
+
+    public void setSemesters(Set<Semester> semesters) {
+        this.semesters = semesters;
     }
 
     public void addGroup(StudentGroup group) {

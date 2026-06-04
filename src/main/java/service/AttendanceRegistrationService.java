@@ -17,6 +17,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.time.LocalDateTime;
 import java.util.stream.Collectors;
 
 public class AttendanceRegistrationService {
@@ -46,14 +47,28 @@ public class AttendanceRegistrationService {
             ClassMeeting meeting = em.createQuery("""
                     select distinct cm
                     from ClassMeeting cm
+                    join fetch cm.group g
+                    left join fetch g.students
                     left join fetch cm.attendances a
                     left join fetch a.student
                     where cm.id = :id
                     """, ClassMeeting.class)
                     .setParameter("id", classMeetingId)
                     .getSingleResult();
-            if (meeting.getStatus() == ClassMeetingStatus.CANCELLED) {
-                throw new IllegalArgumentException("Cannot mark attendance for a cancelled class meeting.");
+            if (meeting.getStatus() != ClassMeetingStatus.SCHEDULED) {
+                throw new IllegalArgumentException("Attendance can only be registered for scheduled class meetings.");
+            }
+            LocalDateTime registrationTime = LocalDateTime.now();
+            LocalDateTime meetingStart = LocalDateTime.of(meeting.getMeetingDate(), meeting.getTime().getStartTime());
+            if (registrationTime.isBefore(meetingStart)) {
+                throw new IllegalArgumentException("Attendance cannot be registered before the class meeting starts.");
+            }
+            Set<Long> expectedStudentIds = meeting.getGroup().getStudents()
+                    .stream()
+                    .map(Student::getId)
+                    .collect(Collectors.toSet());
+            if (!statusesByStudentId.keySet().equals(expectedStudentIds)) {
+                throw new IllegalArgumentException("Attendance must be registered for every student in the meeting group and no other students.");
             }
 
             Map<Long, Attendance> existingByStudentId = meeting.getAttendances()
@@ -75,14 +90,17 @@ public class AttendanceRegistrationService {
                     }
                     attendance = new Attendance(status, student, meeting);
                     attendance.setComment(commentsByStudentId.get(studentId));
+                    attendance.setRegistrationTime(registrationTime);
                     validate(attendance);
                     meeting.addAttendance(attendance);
                 } else {
                     attendance.setStatus(status);
                     attendance.setComment(commentsByStudentId.get(studentId));
+                    attendance.setRegistrationTime(registrationTime);
                     validate(attendance);
                 }
             }
+            meeting.complete();
 
             tx.commit();
         } catch (RuntimeException ex) {

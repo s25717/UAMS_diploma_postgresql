@@ -2,6 +2,7 @@ C:\Users\zhane\Downloads\ProjectImpl_MAS_UniversitySystem_S25717\src\main\java\a
 C:\Users\zhane\Downloads\ProjectImpl_MAS_UniversitySystem_S25717\src\main\java\app\AttendanceRow.java
 C:\Users\zhane\Downloads\ProjectImpl_MAS_UniversitySystem_S25717\src\main\java\app\ReportLineRow.java
 C:\Users\zhane\Downloads\ProjectImpl_MAS_UniversitySystem_S25717\src\main\java\Main.java
+C:\Users\zhane\Downloads\ProjectImpl_MAS_UniversitySystem_S25717\src\main\java\model\ActivityLog.java
 C:\Users\zhane\Downloads\ProjectImpl_MAS_UniversitySystem_S25717\src\main\java\model\Administrator.java
 C:\Users\zhane\Downloads\ProjectImpl_MAS_UniversitySystem_S25717\src\main\java\model\Attendance.java
 C:\Users\zhane\Downloads\ProjectImpl_MAS_UniversitySystem_S25717\src\main\java\model\AttendanceReport.java
@@ -33,10 +34,13 @@ C:\Users\zhane\Downloads\ProjectImpl_MAS_UniversitySystem_S25717\src\main\java\m
 C:\Users\zhane\Downloads\ProjectImpl_MAS_UniversitySystem_S25717\src\main\java\model\value\MeetingSlot.java
 C:\Users\zhane\Downloads\ProjectImpl_MAS_UniversitySystem_S25717\src\main\java\model\value\MeetingTime.java
 C:\Users\zhane\Downloads\ProjectImpl_MAS_UniversitySystem_S25717\src\main\java\model\WeeklyScheduleEntry.java
+C:\Users\zhane\Downloads\ProjectImpl_MAS_UniversitySystem_S25717\src\main\java\persistence\ActivityLogRepository.java
 C:\Users\zhane\Downloads\ProjectImpl_MAS_UniversitySystem_S25717\src\main\java\persistence\AdministratorRepository.java
 C:\Users\zhane\Downloads\ProjectImpl_MAS_UniversitySystem_S25717\src\main\java\persistence\AttendanceReportRepository.java
 C:\Users\zhane\Downloads\ProjectImpl_MAS_UniversitySystem_S25717\src\main\java\persistence\AttendanceRepository.java
 C:\Users\zhane\Downloads\ProjectImpl_MAS_UniversitySystem_S25717\src\main\java\persistence\ClassMeetingRepository.java
+C:\Users\zhane\Downloads\ProjectImpl_MAS_UniversitySystem_S25717\src\main\java\persistence\DatabaseConfig.java
+C:\Users\zhane\Downloads\ProjectImpl_MAS_UniversitySystem_S25717\src\main\java\persistence\DatabaseMigrator.java
 C:\Users\zhane\Downloads\ProjectImpl_MAS_UniversitySystem_S25717\src\main\java\persistence\EmailNotificationRepository.java
 C:\Users\zhane\Downloads\ProjectImpl_MAS_UniversitySystem_S25717\src\main\java\persistence\FieldRepository.java
 C:\Users\zhane\Downloads\ProjectImpl_MAS_UniversitySystem_S25717\src\main\java\persistence\GenericRepository.java

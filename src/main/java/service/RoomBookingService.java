@@ -25,8 +25,8 @@ public class RoomBookingService {
                     """, Room.class)
                     .setParameter("roomId", roomId)
                     .getSingleResult();
-            if (!room.isAvailable(slot)) {
-                throw new IllegalArgumentException("Room is already booked for this time slot.");
+            if (roomBookingRepository.existsOverlappingActiveBooking(roomId, slot)) {
+                throw new IllegalArgumentException("Room is already booked for an overlapping time slot.");
             }
             RoomBooking booking = new RoomBooking(slot, BookingStatus.CONFIRMED, room, null);
             room.addBooking(booking);
@@ -48,9 +48,22 @@ public class RoomBookingService {
         var tx = em.getTransaction();
         try {
             tx.begin();
-            RoomBooking booking = em.find(RoomBooking.class, bookingId);
+            RoomBooking booking = em.createQuery("""
+                    select rb
+                    from RoomBooking rb
+                    left join fetch rb.classMeeting
+                    where rb.id = :id
+                    """, RoomBooking.class)
+                    .setParameter("id", bookingId)
+                    .getResultStream()
+                    .findFirst()
+                    .orElse(null);
             if (booking == null) {
                 throw new IllegalArgumentException("Room booking not found: " + bookingId);
+            }
+            var meeting = booking.getClassMeeting();
+            if (meeting != null && (meeting.isScheduled() || meeting.isCompleted())) {
+                throw new IllegalArgumentException("Cancel the class meeting before cancelling its active room booking.");
             }
             booking.setBookingStatus(BookingStatus.CANCELLED);
             tx.commit();
@@ -67,6 +80,6 @@ public class RoomBookingService {
     public boolean isAvailable(Long roomId, MeetingSlot slot) {
         Room room = roomRepository.findByIdWithBookings(roomId)
                 .orElseThrow(() -> new IllegalArgumentException("Room not found: " + roomId));
-        return room.isAvailable(slot) && !roomBookingRepository.existsForRoomAndSlot(roomId, slot);
+        return !roomBookingRepository.existsOverlappingActiveBooking(roomId, slot);
     }
 }

@@ -28,4 +28,19 @@ public class ScheduledNotificationTaskRepository extends GenericRepository<Sched
                     .getResultList();
         }
     }
+
+    public List<ScheduledNotificationTask> findAllWithDetails() {
+        try (EntityManager em = emf.createEntityManager()) {
+            return em.createQuery("""
+                    select t
+                    from ScheduledNotificationTask t
+                    left join fetch t.recipient
+                    left join fetch t.classMeeting cm
+                    left join fetch cm.subject
+                    left join fetch t.attendanceReport
+                    order by t.scheduledAt desc, t.id desc
+                    """, ScheduledNotificationTask.class)
+                    .getResultList();
+        }
+    }
 }

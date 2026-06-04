@@ -4,7 +4,7 @@ import jakarta.persistence.EntityManagerFactory;
 import jakarta.persistence.Persistence;
 
 public final class JpaUtil {
-    private static final EntityManagerFactory EMF = Persistence.createEntityManagerFactory("mas-pu");
+    private static final EntityManagerFactory EMF = createEntityManagerFactory();
 
     private JpaUtil() {
     }
@@ -15,5 +15,10 @@ public final class JpaUtil {
 
     public static void close() {
         EMF.close();
+    }
+
+    private static EntityManagerFactory createEntityManagerFactory() {
+        DatabaseMigrator.migrate();
+        return Persistence.createEntityManagerFactory("mas-pu", DatabaseConfig.jpaProperties());
     }
 }

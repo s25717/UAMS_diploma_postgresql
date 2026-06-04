@@ -84,6 +84,49 @@ public class ScheduledNotificationTask {
         this.status = status;
     }
 
+    public void startProcessing(LocalDateTime startedAt) {
+        if (status != NotificationTaskStatus.PENDING) {
+            throw new IllegalStateException("Only pending notification tasks can start processing.");
+        }
+        if (scheduledAt != null && startedAt != null && scheduledAt.isAfter(startedAt)) {
+            throw new IllegalStateException("Notification task cannot be processed before its scheduled time.");
+        }
+        status = NotificationTaskStatus.PROCESSING;
+        processedAt = null;
+        failureReason = null;
+    }
+
+    public void markSent(LocalDateTime sentAt) {
+        if (status != NotificationTaskStatus.PROCESSING) {
+            throw new IllegalStateException("Only processing notification tasks can be marked as sent.");
+        }
+        status = NotificationTaskStatus.SENT;
+        processedAt = requireTimestamp(sentAt);
+        failureReason = null;
+    }
+
+    public void markFailed(LocalDateTime failedAt, String reason) {
+        if (status != NotificationTaskStatus.PROCESSING) {
+            throw new IllegalStateException("Only processing notification tasks can be marked as failed.");
+        }
+        if (reason == null || reason.isBlank()) {
+            throw new IllegalArgumentException("Failure reason is required for failed notification tasks.");
+        }
+        status = NotificationTaskStatus.FAILED;
+        retryCount++;
+        processedAt = requireTimestamp(failedAt);
+        failureReason = reason;
+    }
+
+    public void cancel(LocalDateTime cancelledAt, String reason) {
+        if (status != NotificationTaskStatus.PENDING && status != NotificationTaskStatus.FAILED) {
+            throw new IllegalStateException("Only pending or failed notification tasks can be cancelled.");
+        }
+        status = NotificationTaskStatus.CANCELLED;
+        processedAt = requireTimestamp(cancelledAt);
+        failureReason = reason;
+    }
+
     public LocalDateTime getScheduledAt() {
         return scheduledAt;
     }
@@ -138,5 +181,12 @@ public class ScheduledNotificationTask {
 
     public void setAttendanceReport(AttendanceReport attendanceReport) {
         this.attendanceReport = attendanceReport;
+    }
+
+    private LocalDateTime requireTimestamp(LocalDateTime timestamp) {
+        if (timestamp == null) {
+            throw new IllegalArgumentException("Processing timestamp is required.");
+        }
+        return timestamp;
     }
 }

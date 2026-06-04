@@ -8,6 +8,7 @@ model\ClassMeeting.class
 persistence\EmailNotificationRepository.class
 model\Student.class
 service\ScheduleAccessService.class
+app\AttendanceGuiApp$17.class
 service\RoomBookingService.class
 model\enums\MeetingMode.class
 app\AttendanceGuiApp$12.class
@@ -16,6 +17,7 @@ persistence\NotificationRepository.class
 app\AttendanceGuiApp$9.class
 model\enums\ClassMeetingStatus.class
 persistence\ClassMeetingRepository.class
+app\AttendanceGuiApp$21.class
 persistence\ScheduledNotificationTaskRepository.class
 persistence\RoomRepository.class
 persistence\JpaTransactionManager$EntityWork.class
@@ -42,6 +44,7 @@ model\enums\NotificationTaskStatus.class
 service\ScheduleGenerationService.class
 app\AttendanceGuiApp$14.class
 app\AttendanceRow.class
+persistence\DatabaseMigrator.class
 model\enums\NotificationTaskType.class
 app\AttendanceGuiApp$4.class
 service\ClassMeetingService.class
@@ -53,12 +56,15 @@ model\Field.class
 service\AttendanceReportService.class
 model\enums\ClassType.class
 app\AttendanceGuiApp$10.class
+app\AttendanceGuiApp$20.class
 app\AttendanceGuiApp$5.class
 app\AttendanceGuiApp$8.class
 model\value\BirthDate.class
 model\value\MeetingSlot.class
 model\enums\BookingStatus.class
+persistence\ActivityLogRepository.class
 model\Notification.class
+app\AttendanceGuiApp$19.class
 app\ReportLineRow.class
 model\enums\ReportType.class
 persistence\PersonRepository.class
@@ -66,6 +72,8 @@ model\EmailNotification.class
 service\AuthenticationService.class
 service\NotificationService$1.class
 app\AttendanceGuiApp$2.class
+model\ActivityLog.class
+app\AttendanceGuiApp$16.class
 app\AttendanceGuiApp.class
 model\Teacher.class
 persistence\StudentGroupRepository.class
@@ -76,11 +84,14 @@ service\RoomService.class
 app\AttendanceGuiApp$6.class
 Main$DemoIds.class
 model\Administrator.class
+app\AttendanceGuiApp$18.class
+persistence\DatabaseConfig.class
 service\PasswordService.class
 persistence\GenericRepository.class
 service\PersonalSettingsService.class
 app\AttendanceGuiApp$PageSnapshot.class
 persistence\AdministratorRepository.class
+app\AttendanceGuiApp$22.class
 model\AttendanceReport.class
 persistence\SemesterRepository.class
 app\AttendanceGuiApp$7.class
