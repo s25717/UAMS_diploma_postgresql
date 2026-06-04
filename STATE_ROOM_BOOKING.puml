@@ -1,0 +1,32 @@
+@startuml
+title State Diagram - RoomBooking Lifecycle
+
+[*] --> RESERVED : booking created\nroom is available for MeetingSlot
+
+RESERVED --> CONFIRMED : class meeting finalized
+RESERVED --> CANCELLED : admin cancels booking
+
+CONFIRMED --> CANCELLED : meeting cancelled\nor room changed
+CONFIRMED --> CONFIRMED : view booking history
+
+CANCELLED --> [*]
+CONFIRMED --> [*]
+
+note right of RESERVED
+Creation requires:
+Room.isAvailable(MeetingSlot) == true.
+end note
+
+note right of CANCELLED
+Cancelled booking stays in history.
+The ClassMeeting may remain scheduled,
+cancelled, or moved to another room.
+end note
+
+note bottom
+Qualified association:
+Room [MeetingSlot] -> RoomBooking.
+MeetingSlot = date + startTime + endTime.
+end note
+
+@enduml

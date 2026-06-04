@@ -1,0 +1,361 @@
+Project "University Academic Management System" {
+  database_type: "PostgreSQL"
+  Note: '''
+  Defence-ready ERD for the Java/JPA/Hibernate MAS final project.
+  The diagram is based on the current entity model: Person, Student, Teacher,
+  Administrator, StudentGroup, ClassMeeting, Attendance, reporting, weekly
+  schedules, room bookings, and notifications.
+  '''
+}
+
+Enum attendance_status {
+  PRESENT
+  LATE
+  ABSENT
+  EXCUSED
+}
+
+Enum booking_status {
+  RESERVED
+  CONFIRMED
+  CANCELLED
+}
+
+Enum class_meeting_status {
+  DRAFT
+  SCHEDULED
+  CANCELLED
+  COMPLETED
+}
+
+Enum class_type {
+  LECTURE
+  TUTORIAL
+  LABORATORY
+}
+
+Enum meeting_mode {
+  ONLINE
+  CLASSROOM
+}
+
+Enum notification_status {
+  DRAFT
+  PENDING
+  SENT
+  FAILED
+  CANCELLED
+}
+
+Enum notification_task_status {
+  PENDING
+  PROCESSING
+  SENT
+  FAILED
+  CANCELLED
+}
+
+Enum notification_task_type {
+  CLASS_MEETING_REMINDER
+  LOW_ATTENDANCE_WARNING
+  ATTENDANCE_REGISTERED
+  ATTENDANCE_UPDATED
+  REPORT_READY
+}
+
+Enum report_type {
+  SEMESTER
+  TEACHER
+  SUBJECT
+  GROUP
+  COMBINED
+}
+
+Enum day_of_week {
+  MONDAY
+  TUESDAY
+  WEDNESDAY
+  THURSDAY
+  FRIDAY
+  SATURDAY
+  SUNDAY
+}
+
+Table person {
+  id bigint [pk, increment]
+  name varchar [not null]
+  surname varchar [not null]
+  birth_date date [not null]
+  primary_email varchar
+  password_hash varchar [not null]
+
+  Note: "Abstract superclass. Student, Teacher, and Administrator inherit from Person using JOINED inheritance."
+}
+
+Table person_emails {
+  person_id bigint [not null]
+  email varchar [not null, unique]
+
+  indexes {
+    (person_id, email) [pk]
+  }
+
+  Note: "Multi-value Person.emails. Every email is globally unique."
+}
+
+Table student {
+  id bigint [pk, ref: > person.id]
+  student_number varchar [not null, unique]
+  group_id bigint
+
+  Note: "Student extends Person. A student belongs to one StudentGroup."
+}
+
+Table teacher {
+  id bigint [pk, ref: > person.id]
+  teacher_employee_number varchar [not null, unique]
+
+  Note: "Teacher extends Person. qualified_subjects is represented by teacher_subject."
+}
+
+Table administrator {
+  id bigint [pk, ref: > person.id]
+  admin_employee_number varchar [not null, unique]
+
+  Note: "Administrator extends Person."
+}
+
+Table field_of_study {
+  id bigint [pk, increment]
+  name varchar [not null, unique]
+
+  Note: "Corresponds to the Java entity named Field."
+}
+
+Table semester {
+  id bigint [pk, increment]
+  number int [not null]
+  start_date date
+  end_date date
+  field_id bigint [not null]
+}
+
+Table student_group {
+  id bigint [pk, increment]
+  code varchar [not null, unique]
+  semester_id bigint [not null]
+
+  Note: "MAS requirement 4.2.4 is demonstrated by StudentGroup 1 -> 0..* Student."
+}
+
+Table subject {
+  id bigint [pk, increment]
+  name varchar [not null, unique]
+}
+
+Table subject_group {
+  subject_id bigint [not null]
+  group_id bigint [not null]
+
+  indexes {
+    (subject_id, group_id) [pk]
+  }
+
+  Note: "Subjects assigned to student groups."
+}
+
+Table teacher_subject {
+  teacher_id bigint [not null]
+  subject_id bigint [not null]
+
+  indexes {
+    (teacher_id, subject_id) [pk]
+  }
+
+  Note: "Teacher specialization. A Teacher is qualified for 1 to 5 Subjects."
+}
+
+Table weekly_schedule_entry {
+  id bigint [pk, increment]
+  group_id bigint [not null]
+  subject_id bigint [not null]
+  teacher_id bigint [not null]
+  class_type class_type [not null]
+  meeting_mode meeting_mode [not null]
+  day_of_week day_of_week [not null]
+  start_time time [not null]
+  end_time time [not null]
+  room_id bigint
+  online_meeting_link varchar
+  semester_id bigint [not null]
+
+  Note: "Recurring weekly template. ClassMeeting represents a concrete generated occurrence."
+}
+
+Table class_meeting {
+  id bigint [pk, increment]
+  meeting_date date [not null]
+  day_of_week day_of_week [not null]
+  start_time time [not null]
+  end_time time [not null]
+  class_type class_type [not null]
+  meeting_mode meeting_mode [not null]
+  status class_meeting_status [not null]
+  location varchar
+  online_meeting_link varchar
+  comment varchar
+  subject_id bigint [not null]
+  teacher_id bigint [not null]
+  group_id bigint [not null]
+  schedule_entry_id bigint
+
+  Note: "Concrete lesson. Teacher must be qualified for the selected subject."
+}
+
+Table attendance {
+  id bigint [pk, increment]
+  status attendance_status [not null]
+  comment varchar
+  student_id bigint [not null]
+  class_meeting_id bigint [not null]
+
+  indexes {
+    (student_id, class_meeting_id) [unique]
+  }
+
+  Note: "One attendance record per student per class meeting."
+}
+
+Table attendance_report {
+  id bigint [pk, increment]
+  generated_on date [not null]
+  report_type report_type [not null]
+  date_from date
+  date_to date
+  class_type class_type
+  teacher_id bigint
+  subject_id bigint
+  group_id bigint
+  overall_performance_percentage decimal
+
+  Note: "Stores flexible report filters. Null filters mean unrestricted criteria."
+}
+
+Table attendance_report_semesters {
+  report_id bigint [not null]
+  semester_id bigint [not null]
+
+  indexes {
+    (report_id, semester_id) [pk]
+  }
+}
+
+Table report_line {
+  id bigint [pk, increment]
+  total_meetings int [not null]
+  present_count int [not null]
+  absent_count int [not null]
+  late_count int [not null]
+  excused_count int [not null]
+  attendance_percentage decimal [not null]
+  student_id bigint [not null]
+  report_id bigint [not null]
+
+  Note: "Detailed report line per student. PRESENT and LATE count as attended."
+}
+
+Table room {
+  id bigint [pk, increment]
+  room_number varchar [not null, unique]
+  capacity int [not null]
+
+  Note: "Room owns bookings qualified by MeetingSlot."
+}
+
+Table room_booking {
+  id bigint [pk, increment]
+  date date [not null]
+  start_time time [not null]
+  end_time time [not null]
+  booking_status booking_status [not null]
+  room_id bigint [not null]
+  class_meeting_id bigint [unique]
+
+  indexes {
+    (room_id, date, start_time, end_time) [unique]
+  }
+
+  Note: "Qualified association: Room [MeetingSlot=date+start_time+end_time] -> RoomBooking."
+}
+
+Table notification {
+  id bigint [pk, increment]
+  notification_type varchar [not null, note: "Discriminator: EMAIL = EmailNotification, SYSTEM = SystemNotification"]
+  title varchar
+  message varchar [not null]
+  priority int [not null]
+  status notification_status [not null]
+  recipient_id bigint
+  has_attachment boolean [note: "EmailNotification-specific attribute"]
+  display_seconds int [note: "SystemNotification-specific attribute"]
+
+  Note: "Represents Notification inheritance with SINGLE_TABLE strategy. EmailNotification and SystemNotification are not separate database tables; they are rows distinguished by notification_type."
+}
+
+Table scheduled_notification_task {
+  id bigint [pk, increment]
+  task_type notification_task_type [not null]
+  status notification_task_status [not null]
+  scheduled_at timestamp [not null]
+  processed_at timestamp
+  retry_count int [not null]
+  failure_reason varchar
+  recipient_id bigint
+  class_meeting_id bigint
+  attendance_report_id bigint
+
+  Note: "Persistent task processed by SystemScheduler."
+}
+
+Ref: person_emails.person_id > person.id
+
+Ref: student.group_id > student_group.id
+Ref: semester.field_id > field_of_study.id
+Ref: student_group.semester_id > semester.id
+
+Ref: subject_group.subject_id > subject.id
+Ref: subject_group.group_id > student_group.id
+
+Ref: teacher_subject.teacher_id > teacher.id
+Ref: teacher_subject.subject_id > subject.id
+
+Ref: weekly_schedule_entry.group_id > student_group.id
+Ref: weekly_schedule_entry.subject_id > subject.id
+Ref: weekly_schedule_entry.teacher_id > teacher.id
+Ref: weekly_schedule_entry.room_id > room.id
+Ref: weekly_schedule_entry.semester_id > semester.id
+
+Ref: class_meeting.subject_id > subject.id
+Ref: class_meeting.teacher_id > teacher.id
+Ref: class_meeting.group_id > student_group.id
+Ref: class_meeting.schedule_entry_id > weekly_schedule_entry.id
+
+Ref: attendance.student_id > student.id
+Ref: attendance.class_meeting_id > class_meeting.id
+
+Ref: attendance_report.teacher_id > teacher.id
+Ref: attendance_report.subject_id > subject.id
+Ref: attendance_report.group_id > student_group.id
+Ref: attendance_report_semesters.report_id > attendance_report.id
+Ref: attendance_report_semesters.semester_id > semester.id
+Ref: report_line.student_id > student.id
+Ref: report_line.report_id > attendance_report.id
+
+Ref: room_booking.room_id > room.id
+Ref: room_booking.class_meeting_id > class_meeting.id
+
+Ref: notification.recipient_id > person.id
+
+Ref: scheduled_notification_task.recipient_id > person.id
+Ref: scheduled_notification_task.class_meeting_id > class_meeting.id
+Ref: scheduled_notification_task.attendance_report_id > attendance_report.id

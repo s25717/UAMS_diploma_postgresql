@@ -1,0 +1,31 @@
+@startuml
+title State Diagram - ScheduledNotificationTask Lifecycle
+
+[*] --> PENDING : task created
+
+PENDING --> PROCESSING : SystemScheduler picks due task
+PENDING --> CANCELLED : admin cancels pending task
+
+PROCESSING --> SENT : NotificationService sends notification
+PROCESSING --> FAILED : sending fails
+
+FAILED --> PENDING : retry scheduled\nretryCount increased
+FAILED --> CANCELLED : admin cancels failed task
+
+SENT --> [*]
+CANCELLED --> [*]
+
+note right of PENDING
+Task waits until scheduledAt.
+end note
+
+note right of PROCESSING
+SystemScheduler owns this transition.
+end note
+
+note right of FAILED
+failureReason stores the problem.
+retryCount tracks attempts.
+end note
+
+@enduml

@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<persistence xmlns="https://jakarta.ee/xml/ns/persistence"
+             xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+             xsi:schemaLocation="https://jakarta.ee/xml/ns/persistence https://jakarta.ee/xml/ns/persistence/persistence_3_2.xsd"
+             version="3.2">
+    <persistence-unit name="mas-pu" transaction-type="RESOURCE_LOCAL">
+        <provider>org.hibernate.jpa.HibernatePersistenceProvider</provider>
+
+        <class>model.Person</class>
+        <class>model.Student</class>
+        <class>model.Teacher</class>
+        <class>model.Administrator</class>
+        <class>model.Notification</class>
+        <class>model.EmailNotification</class>
+        <class>model.SystemNotification</class>
+        <class>model.Field</class>
+        <class>model.Semester</class>
+        <class>model.StudentGroup</class>
+        <class>model.Subject</class>
+        <class>model.ClassMeeting</class>
+        <class>model.Attendance</class>
+        <class>model.AttendanceReport</class>
+        <class>model.ReportLine</class>
+        <class>model.Room</class>
+        <class>model.RoomBooking</class>
+        <class>model.ScheduledNotificationTask</class>
+        <class>model.WeeklyScheduleEntry</class>
+
+        <properties>
+            <property name="jakarta.persistence.jdbc.driver" value="org.h2.Driver"/>
+            <property name="jakarta.persistence.jdbc.url" value="jdbc:h2:file:./mp4_mas_db;DB_CLOSE_DELAY=-1"/>
+            <property name="jakarta.persistence.jdbc.user" value="sa"/>
+            <property name="jakarta.persistence.jdbc.password" value=""/>
+
+            <property name="hibernate.hbm2ddl.auto" value="create"/>
+            <property name="hibernate.show_sql" value="true"/>
+            <property name="hibernate.format_sql" value="true"/>
+            <property name="hibernate.highlight_sql" value="true"/>
+            <property name="hibernate.use_sql_comments" value="true"/>
+            <property name="jakarta.persistence.validation.mode" value="AUTO"/>
+        </properties>
+    </persistence-unit>
+</persistence>

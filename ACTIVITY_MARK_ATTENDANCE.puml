@@ -1,0 +1,71 @@
+@startuml
+title Activity Diagram - Mark Attendance
+
+skinparam linetype ortho
+
+|Teacher / Administrator|
+start
+
+:Teacher or Administrator opens ClassMeetingDetailsView;
+:User clicks Mark Attendance;
+
+|System|
+if (Meeting status is CANCELLED?) then (yes)
+  :Show "Cannot mark attendance for a cancelled class meeting.";
+  stop
+endif
+
+if (User is Teacher?) then (yes)
+  if (Teacher is assigned to meeting?) then (yes)
+  else (no)
+    :Show "You are not assigned to this class meeting.";
+    stop
+  endif
+
+  if (Meeting start time has passed?) then (yes)
+  else (no)
+    :Show "Attendance cannot be marked before the class meeting starts.";
+    stop
+  endif
+else (Administrator)
+  :Administrator may mark attendance for any non-cancelled meeting;
+endif
+
+|Database / Repositories|
+:Load ClassMeeting with StudentGroup and Students;
+
+|System|
+:Use ClassMeeting -> StudentGroup -> Students;
+:Build one attendance row for each student;
+:Display attendance table;
+
+|Teacher / Administrator|
+repeat
+  :User selects attendance status;
+  :User optionally enters individual comment;
+repeat while (More student rows?) is (yes)
+
+|System|
+if (Any status missing?) then (yes)
+  :Show "Attendance status is required.";
+  stop
+endif
+
+|Database / Repositories|
+:Check existing Attendance records;
+
+|System|
+if (Duplicate attendance exists?) then (yes)
+  :Show "Attendance has already been registered for this student and meeting.";
+  stop
+else (no)
+  |Database / Repositories|
+  :Begin transaction;
+  :Persist Attendance records;
+  :Commit transaction;
+  |System|
+  :Show success message;
+endif
+
+stop
+@enduml

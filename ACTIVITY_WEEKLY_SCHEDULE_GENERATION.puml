@@ -1,0 +1,64 @@
+@startuml
+title Activity Diagram - Weekly Schedule Entry And Class Meeting Generation
+
+start
+
+:Administrator opens Manage Weekly Schedules;
+:System displays existing WeeklyScheduleEntry records;
+:Administrator enters group, semester, subject, teacher, class type, meeting mode, day, time;
+
+if (Meeting mode is CLASSROOM?) then (yes)
+  :Administrator selects room;
+else (ONLINE)
+  :Administrator enters online meeting link;
+endif
+
+:Administrator clicks Save Weekly Schedule Entry;
+
+if (Required fields valid?) then (yes)
+else (no)
+  :Show validation error;
+  stop
+endif
+
+if (Teacher qualified for subject?) then (yes)
+else (no)
+  :Show "Teacher is not qualified to teach this subject.";
+  stop
+endif
+
+if (Start time before end time?) then (yes)
+else (no)
+  :Show time validation error;
+  stop
+endif
+
+:Save WeeklyScheduleEntry;
+:Administrator clicks Generate Class Meetings;
+:System iterates dates between semester.startDate and semester.endDate;
+
+repeat
+  if (Date matches entry.dayOfWeek?) then (yes)
+    :Create ClassMeeting for concrete date;
+    :Set subject, teacher, group, type, mode, status SCHEDULED;
+    :Link meeting to WeeklyScheduleEntry;
+
+    if (Meeting mode is CLASSROOM?) then (yes)
+      :Create MeetingSlot(date, start, end);
+      if (Room is available?) then (yes)
+        :Create RoomBooking;
+      else (no)
+        :Rollback generation;
+        :Show "Room is already booked for this time slot.";
+        stop
+      endif
+    endif
+  endif
+repeat while (More semester dates?) is (yes)
+
+:Save generated ClassMeeting objects;
+:Generated meetings appear in Public Weekly Schedule and personal schedules;
+:Show generated meetings count;
+
+stop
+@enduml

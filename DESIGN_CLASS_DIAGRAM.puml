@@ -1,0 +1,350 @@
+@startuml
+title University Academic Management System - Design Class Diagram
+
+skinparam classAttributeIconSize 0
+skinparam linetype ortho
+hide circle
+
+package "JavaFX GUI" {
+  class AttendanceGuiApp <<JavaFX Application>> {
+    start(stage): void
+    showLoginView(): void
+    showMainLayout(): void
+    createPublicWeeklyScheduleView(): Node
+    createPersonalSettingsView(): Node
+    createGroupStudentsAssociationView(): Node
+    createAdminWeeklyScheduleView(): Node
+    createAdminNotificationView(): Node
+    createRoomsView(): Node
+    createReportsView(): Node
+  }
+
+  class AttendanceRow <<table row model>> {
+    student: Student
+    status: AttendanceStatus
+    comment: String
+  }
+
+  class ReportLineRow <<table row model>> {
+    studentName: String
+    totalMeetings: int
+    presentCount: int
+    lateCount: int
+    excusedCount: int
+    absentCount: int
+    attendancePercentage: double
+  }
+
+  class LoginView <<screen>> {
+    emailField
+    passwordField
+    loginButton
+    messageLabel
+  }
+
+  class MainLayout <<screen>> {
+    roleBasedNavigation
+    contentArea
+    loggedInUserLabel
+  }
+
+  class GroupStudentsAssociationView <<screen>> {
+    groupListView
+    studentsTableView
+  }
+
+  class AdminWeeklyScheduleView <<screen>> {
+    saveWeeklyScheduleEntry()
+    generateClassMeetings()
+  }
+
+  class AdminNotificationView <<screen>> {
+    createNotification()
+    editNotification()
+    cancelPendingNotification()
+  }
+
+  class AdminRoomManagementView <<screen>> {
+    createRoom()
+    editRoom()
+    createBooking()
+    checkAvailability()
+    cancelBooking()
+  }
+
+  AttendanceGuiApp ..> LoginView : builds
+  AttendanceGuiApp ..> MainLayout : builds
+  AttendanceGuiApp ..> GroupStudentsAssociationView : builds
+  AttendanceGuiApp ..> AdminWeeklyScheduleView : builds
+  AttendanceGuiApp ..> AdminNotificationView : builds
+  AttendanceGuiApp ..> AdminRoomManagementView : builds
+  AttendanceGuiApp ..> AttendanceRow : uses
+  AttendanceGuiApp ..> ReportLineRow : uses
+}
+
+package "Application Services" {
+  class AuthenticationService {
+    login(email, password): Optional<Person>
+    getCurrentUser(): Person
+    isStudent(): boolean
+    isTeacher(): boolean
+    isAdmin(): boolean
+    logout(): void
+  }
+
+  class SessionContext {
+    currentUser: Person
+  }
+
+  class PasswordService {
+    hash(rawPassword): String
+    matches(rawPassword, storedHash): boolean
+  }
+
+  class PersonService {
+    save(person): Person
+    emailExistsForAnotherPerson(email, personId): boolean
+    validateGlobalEmailUniqueness(person): void
+  }
+
+  class PersonalSettingsService {
+    addEmail(personId, email): Person
+    editEmail(personId, oldEmail, newEmail): Person
+    deleteEmail(personId, email): Person
+    setPrimaryEmail(personId, email): Person
+    changePassword(personId, oldPassword, newPassword): void
+  }
+
+  class ScheduleAccessService {
+    canOpenDetails(user, meeting): boolean
+    validateCanOpenDetails(user, meeting): void
+  }
+
+  class ClassMeetingService {
+    createClassMeeting(meeting): ClassMeeting
+    cancelClassMeeting(meetingId): ClassMeeting
+    validateCanMarkAttendance(teacherId, meeting): void
+  }
+
+  class AttendanceRegistrationService {
+    saveAttendance(meetingId, rows): void
+  }
+
+  class AttendanceReportFilter {
+    semesterIds: Set<Long>
+    teacherId: Long
+    subjectId: Long
+    groupId: Long
+    classType: ClassType
+    dateFrom: LocalDate
+    dateTo: LocalDate
+  }
+
+  class AttendanceReportService {
+    generateReport(filter): AttendanceReport
+    buildConclusionMessage(report): String
+  }
+
+  class ReportExportService {
+    exportToCsv(report, targetFile): Path
+  }
+
+  class ScheduleGenerationService {
+    generateClassMeetingsForSemester(entry): List<ClassMeeting>
+  }
+
+  class RoomBookingService {
+    createBooking(roomId, slot): RoomBooking
+    cancelBooking(bookingId): void
+    isAvailable(roomId, slot): boolean
+  }
+
+  class NotificationService {
+    send(task): Notification
+  }
+
+  class SystemScheduler {
+    processPendingNotificationTasks(): void
+    createClassMeetingReminderTasks(): void
+    createLowAttendanceWarnings(): void
+    createReportReadyNotification(report): void
+  }
+
+  class SampleDataService {
+    seedIfDatabaseIsEmpty(): void
+  }
+}
+
+package "Persistence Layer" {
+  class JpaUtil {
+    getEntityManagerFactory(): EntityManagerFactory
+  }
+
+  class GenericRepository<T> {
+    findById(id): Optional<T>
+    findAll(): List<T>
+    save(entity): T
+    update(entity): T
+    delete(entity): void
+  }
+
+  class PersonRepository {
+    findByEmail(email): Optional<Person>
+    emailExistsForAnotherPerson(email, personId): boolean
+    findAllWithEmails(): List<Person>
+  }
+
+  class StudentRepository
+  class TeacherRepository {
+    findByIdWithQualifiedSubjects(id): Optional<Teacher>
+  }
+  class AdministratorRepository
+  class StudentGroupRepository {
+    findAllWithStudents(): List<StudentGroup>
+  }
+  class SubjectRepository
+  class SemesterRepository
+  class ClassMeetingRepository {
+    findClassMeetingsForCurrentWeek(): List<ClassMeeting>
+    findUpcomingClassMeetingsForStudent(studentId): List<ClassMeeting>
+    findPastClassMeetingsForStudent(studentId): List<ClassMeeting>
+    findUpcomingClassMeetingsForTeacher(teacherId): List<ClassMeeting>
+    findPastClassMeetingsForTeacher(teacherId): List<ClassMeeting>
+    findByReportFilter(filter): List<ClassMeeting>
+  }
+  class AttendanceRepository {
+    findByClassMeetingIds(meetingIds): List<Attendance>
+  }
+  class AttendanceReportRepository
+  class ReportLineRepository
+  class WeeklyScheduleEntryRepository {
+    findAllWithDetails(): List<WeeklyScheduleEntry>
+    saveWithManagedReferences(entry): WeeklyScheduleEntry
+  }
+  class RoomRepository {
+    findAllWithBookings(): List<Room>
+  }
+  class RoomBookingRepository
+  class NotificationRepository {
+    findAllWithRecipients(): List<Notification>
+    createSystemNotification(recipientId, title, message, status): Notification
+  }
+  class ScheduledNotificationTaskRepository {
+    findPendingDueTasks(now): List<ScheduledNotificationTask>
+  }
+
+  GenericRepository <|-- PersonRepository
+  GenericRepository <|-- StudentRepository
+  GenericRepository <|-- TeacherRepository
+  GenericRepository <|-- AdministratorRepository
+  GenericRepository <|-- StudentGroupRepository
+  GenericRepository <|-- SubjectRepository
+  GenericRepository <|-- SemesterRepository
+  GenericRepository <|-- ClassMeetingRepository
+  GenericRepository <|-- AttendanceRepository
+  GenericRepository <|-- AttendanceReportRepository
+  GenericRepository <|-- ReportLineRepository
+  GenericRepository <|-- WeeklyScheduleEntryRepository
+  GenericRepository <|-- RoomRepository
+  GenericRepository <|-- RoomBookingRepository
+  GenericRepository <|-- NotificationRepository
+  GenericRepository <|-- ScheduledNotificationTaskRepository
+  GenericRepository ..> JpaUtil : obtains EntityManager
+}
+
+package "Domain Model" {
+  abstract class Person
+  class Student
+  class Teacher
+  class Administrator
+  class StudentGroup
+  class Subject
+  class Semester
+  class Field
+  class WeeklyScheduleEntry
+  class ClassMeeting
+  class Attendance
+  class AttendanceReport
+  class ReportLine
+  class Room
+  class RoomBooking
+  class Notification
+  class ScheduledNotificationTask
+  class MeetingSlot
+}
+
+AttendanceGuiApp --> AuthenticationService
+AttendanceGuiApp --> PersonalSettingsService
+AttendanceGuiApp --> ScheduleAccessService
+AttendanceGuiApp --> ClassMeetingService
+AttendanceGuiApp --> AttendanceRegistrationService
+AttendanceGuiApp --> AttendanceReportService
+AttendanceGuiApp --> ReportExportService
+AttendanceGuiApp --> ScheduleGenerationService
+AttendanceGuiApp --> RoomBookingService
+AttendanceGuiApp --> NotificationService
+
+AuthenticationService --> PersonRepository
+AuthenticationService --> PasswordService
+AuthenticationService --> SessionContext
+
+PersonService --> PersonRepository
+PersonalSettingsService --> PersonRepository
+PersonalSettingsService --> PasswordService
+
+ScheduleAccessService --> Person
+ClassMeetingService --> ClassMeetingRepository
+ClassMeetingService --> RoomBookingService
+AttendanceRegistrationService --> AttendanceRepository
+AttendanceRegistrationService --> ClassMeetingRepository
+
+AttendanceReportService --> ClassMeetingRepository
+AttendanceReportService --> AttendanceRepository
+AttendanceReportService --> AttendanceReportRepository
+AttendanceReportService --> AttendanceReportFilter
+ReportExportService --> AttendanceReport
+
+ScheduleGenerationService --> WeeklyScheduleEntryRepository
+ScheduleGenerationService --> ClassMeetingRepository
+ScheduleGenerationService --> RoomBookingService
+
+RoomBookingService --> RoomRepository
+RoomBookingService --> RoomBookingRepository
+RoomBookingService --> MeetingSlot
+
+NotificationService --> NotificationRepository
+SystemScheduler --> NotificationService
+SystemScheduler --> ScheduledNotificationTaskRepository
+SystemScheduler --> AttendanceRepository
+SystemScheduler --> ClassMeetingRepository
+
+PersonRepository ..> Person
+StudentRepository ..> Student
+TeacherRepository ..> Teacher
+AdministratorRepository ..> Administrator
+StudentGroupRepository ..> StudentGroup
+SubjectRepository ..> Subject
+SemesterRepository ..> Semester
+ClassMeetingRepository ..> ClassMeeting
+AttendanceRepository ..> Attendance
+AttendanceReportRepository ..> AttendanceReport
+ReportLineRepository ..> ReportLine
+WeeklyScheduleEntryRepository ..> WeeklyScheduleEntry
+RoomRepository ..> Room
+RoomBookingRepository ..> RoomBooking
+NotificationRepository ..> Notification
+ScheduledNotificationTaskRepository ..> ScheduledNotificationTask
+
+note right of GroupStudentsAssociationView
+This screen satisfies MAS 4.2.4.
+It uses StudentGroupRepository.findAllWithStudents()
+and then displays selectedGroup.getStudents().
+end note
+
+note bottom of AttendanceGuiApp
+Several screen classes are represented as design-level views.
+In the current JavaFX implementation they are built by methods
+inside AttendanceGuiApp.
+end note
+
+@enduml

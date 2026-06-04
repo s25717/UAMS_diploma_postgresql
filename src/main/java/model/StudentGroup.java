@@ -1,0 +1,116 @@
+package model;
+
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.FetchType;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.GenerationType;
+import jakarta.persistence.Id;
+import jakarta.persistence.ManyToMany;
+import jakarta.persistence.ManyToOne;
+import jakarta.persistence.OneToMany;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+
+import java.util.HashSet;
+import java.util.Set;
+
+@Entity
+public class StudentGroup {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    @NotBlank
+    @Column(nullable = false, unique = true)
+    private String code;
+
+    @NotNull
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    private Semester semester;
+
+    @OneToMany(mappedBy = "group")
+    private Set<Student> students = new HashSet<>();
+
+    @ManyToMany(mappedBy = "groups")
+    private Set<Subject> subjects = new HashSet<>();
+
+    @OneToMany(mappedBy = "group")
+    private Set<ClassMeeting> classMeetings = new HashSet<>();
+
+    @OneToMany(mappedBy = "group")
+    private Set<WeeklyScheduleEntry> weeklyScheduleEntries = new HashSet<>();
+
+    protected StudentGroup() {
+    }
+
+    public StudentGroup(String code) {
+        this.code = code;
+    }
+
+    public Long getId() {
+        return id;
+    }
+
+    public void setId(Long id) {
+        this.id = id;
+    }
+
+    public String getCode() {
+        return code;
+    }
+
+    public void setCode(String code) {
+        this.code = code;
+    }
+
+    public Semester getSemester() {
+        return semester;
+    }
+
+    public void setSemester(Semester semester) {
+        this.semester = semester;
+    }
+
+    public Set<Student> getStudents() {
+        return students;
+    }
+
+    public void setStudents(Set<Student> students) {
+        this.students = students;
+    }
+
+    public Set<Subject> getSubjects() {
+        return subjects;
+    }
+
+    public void setSubjects(Set<Subject> subjects) {
+        this.subjects = subjects;
+    }
+
+    public Set<ClassMeeting> getClassMeetings() {
+        return classMeetings;
+    }
+
+    public void setClassMeetings(Set<ClassMeeting> classMeetings) {
+        this.classMeetings = classMeetings;
+    }
+
+    public Set<WeeklyScheduleEntry> getWeeklyScheduleEntries() {
+        return weeklyScheduleEntries;
+    }
+
+    public void setWeeklyScheduleEntries(Set<WeeklyScheduleEntry> weeklyScheduleEntries) {
+        this.weeklyScheduleEntries = weeklyScheduleEntries;
+    }
+
+    public void addStudent(Student student) {
+        students.add(student);
+        student.setGroup(this);
+    }
+
+    public void removeStudent(Student student) {
+        students.remove(student);
+        student.setGroup(null);
+    }
+}

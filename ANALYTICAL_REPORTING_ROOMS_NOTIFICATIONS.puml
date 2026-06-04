@@ -1,0 +1,121 @@
+@startuml
+title Analytical Class Diagram - Reports, Rooms, Notifications
+
+skinparam classAttributeIconSize 0
+skinparam linetype ortho
+hide circle
+
+class Person {
+  id: Long
+  name: String
+  surname: String
+}
+
+class Student {
+  studentNumber: String
+}
+
+class Teacher {
+  employeeNumber: String
+}
+
+class StudentGroup {
+  code: String
+}
+
+class Subject {
+  name: String
+}
+
+class Semester {
+  number: int
+}
+
+class ClassMeeting {
+  meetingDate: LocalDate
+  status: ClassMeetingStatus
+}
+
+class AttendanceReport {
+  generatedOn: LocalDate
+  reportType: ReportType
+  dateFrom: LocalDate
+  dateTo: LocalDate
+  classType: ClassType
+  overallPerformancePercentage: double
+}
+
+class ReportLine {
+  totalMeetings: int
+  presentCount: int
+  lateCount: int
+  excusedCount: int
+  absentCount: int
+  attendancePercentage: double
+}
+
+class Room {
+  roomNumber: String
+  capacity: int
+  isAvailable(slot): boolean
+}
+
+class MeetingSlot <<qualifier>> {
+  date: LocalDate
+  startTime: LocalTime
+  endTime: LocalTime
+}
+
+class RoomBooking {
+  bookingStatus: BookingStatus
+}
+
+abstract class Notification {
+  title: String
+  message: String
+  status: NotificationStatus
+}
+
+class EmailNotification
+class SystemNotification
+
+class ScheduledNotificationTask {
+  taskType: NotificationTaskType
+  status: NotificationTaskStatus
+  scheduledAt: LocalDateTime
+  processedAt: LocalDateTime
+}
+
+Person <|-- Student
+Person <|-- Teacher
+
+AttendanceReport "1" *-- "0..*" ReportLine
+ReportLine "0..*" -- "1" Student
+AttendanceReport "0..*" -- "0..*" Semester : selected
+AttendanceReport "0..*" -- "0..1" Teacher : filter
+AttendanceReport "0..*" -- "0..1" Subject : filter
+AttendanceReport "0..*" -- "0..1" StudentGroup : filter
+
+Room "1" -- "0..*" RoomBooking : bookings [MeetingSlot]
+RoomBooking *-- "1" MeetingSlot
+ClassMeeting "0..1" -- "0..1" RoomBooking
+
+Notification <|-- EmailNotification
+Notification <|-- SystemNotification
+Person "1" -- "0..*" Notification : recipient
+Person "1" -- "0..*" ScheduledNotificationTask : recipient
+ClassMeeting "0..1" -- "0..*" ScheduledNotificationTask
+AttendanceReport "0..1" -- "0..*" ScheduledNotificationTask
+
+note right of Room
+Qualified association:
+Room [MeetingSlot] -> RoomBooking.
+Unique slot = date + start + end.
+end note
+
+note right of AttendanceReport
+Null report filters mean unrestricted criteria.
+Performance is the average of ReportLine percentages.
+end note
+
+@enduml

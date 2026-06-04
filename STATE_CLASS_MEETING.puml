@@ -1,0 +1,39 @@
+@startuml
+title State Diagram - ClassMeeting Lifecycle
+
+[*] --> DRAFT : admin creates partial meeting
+
+DRAFT --> SCHEDULED : complete required details\nand validate teacher/room/link
+DRAFT --> CANCELLED : cancel draft
+
+SCHEDULED --> CANCELLED : cancel meeting
+SCHEDULED --> COMPLETED : meeting time passes\nand attendance can be completed
+
+COMPLETED --> COMPLETED : edit attendance/comments
+CANCELLED --> CANCELLED : view history only
+
+CANCELLED --> [*]
+COMPLETED --> [*]
+
+note right of DRAFT
+Details may be incomplete.
+Admin can add room/link/comment later.
+end note
+
+note right of SCHEDULED
+Visible in public and personal schedules.
+Attendance is allowed only when business rules pass.
+end note
+
+note right of CANCELLED
+Meeting is not deleted.
+Attendance cannot be marked.
+History and audit information remain.
+end note
+
+note right of COMPLETED
+Past meeting.
+Authorized users can view or edit attendance.
+end note
+
+@enduml
