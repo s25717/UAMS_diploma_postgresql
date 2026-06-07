@@ -27,7 +27,11 @@ public class NotificationService {
             notification.setRecipient(task.getRecipient());
             return notificationManagementService.add(notification);
         }
-        EmailNotification notification = new EmailNotification(message, 2, false);
+        String deliveryEmail = task.getRecipient().getPrimaryEmail();
+        if (deliveryEmail == null || deliveryEmail.isBlank()) {
+            throw new IllegalArgumentException("Notification task recipient must have an email address.");
+        }
+        EmailNotification notification = new EmailNotification(message, 2, false, deliveryEmail);
         notification.setTitle(message);
         notification.setRecipient(task.getRecipient());
         return notificationManagementService.add(notification);
