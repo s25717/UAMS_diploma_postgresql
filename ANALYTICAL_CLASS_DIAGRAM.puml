@@ -62,8 +62,14 @@ package "Academic Structure" {
     name: String
   }
 
-  Field "1" -- "0..*" Semester : contains
+  class SemesterFieldSubject <<association class>>
+
+  Field "0..*" -- "1..*" Semester : academic periods
+  Semester "1" -- "0..*" SemesterFieldSubject
+  Field "1" -- "0..*" SemesterFieldSubject
+  Subject "1" -- "0..*" SemesterFieldSubject : curriculum
   Semester "1" -- "0..*" StudentGroup : groups
+  Field "1" -- "0..*" StudentGroup : field context
   StudentGroup "1" -- "0..*" Student : students
   Subject "0..*" -- "0..*" StudentGroup : assigned to
   Teacher "1..*" -- "1..5" Subject : qualified subjects
@@ -105,6 +111,7 @@ package "Scheduling And Attendance" {
   }
 
   Semester "1" -- "0..*" WeeklyScheduleEntry : has templates
+  Field "1" -- "0..*" WeeklyScheduleEntry : field context
   StudentGroup "1" -- "0..*" WeeklyScheduleEntry : has
   Subject "1" -- "0..*" WeeklyScheduleEntry : planned subject
   Teacher "1" -- "0..*" WeeklyScheduleEntry : planned teacher

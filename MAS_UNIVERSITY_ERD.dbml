@@ -139,7 +139,19 @@ Table semester {
   number int [not null]
   start_date date
   end_date date
+
+  Note: "A shared academic period. PostgreSQL deferred triggers require every semester to be connected to at least one field through semester_field."
+}
+
+Table semester_field {
+  semester_id bigint [not null]
   field_id bigint [not null]
+
+  indexes {
+    (semester_id, field_id) [pk]
+  }
+
+  Note: "Many-to-many Semester-Field connection. Different fields of study can participate in the same semester."
 }
 
 Table student_group {
@@ -147,8 +159,9 @@ Table student_group {
   code varchar [not null, unique]
   max_size int [not null]
   semester_id bigint [not null]
+  field_id bigint [not null]
 
-  Note: "MAS requirement 4.2.4 is demonstrated by StudentGroup 1 -> 0..* Student. max_size limits group capacity."
+  Note: "A group belongs to one exact semester-field academic context. Composite FK (semester_id, field_id) requires that pair to exist in semester_field. max_size limits group capacity."
 }
 
 Table subject {
@@ -156,15 +169,17 @@ Table subject {
   name varchar [not null, unique]
 }
 
-Table semester_subject {
+Table semester_field_subject {
+  id bigint [pk, increment]
   semester_id bigint [not null]
+  field_id bigint [not null]
   subject_id bigint [not null]
 
   indexes {
-    (semester_id, subject_id) [pk]
+    (semester_id, field_id, subject_id) [unique]
   }
 
-  Note: "Curriculum availability table. A subject must be available in a semester before it can be assigned to a group in that semester or used by a class meeting for that group. Active curriculum subjects must have at least one qualified teacher."
+  Note: "Explicit curriculum association entity. A deferred composite FK references semester_field. A subject belongs to an exact semester-field pair before it can be assigned to a group or schedule in that context."
 }
 
 Table subject_group {
@@ -202,8 +217,9 @@ Table weekly_schedule_entry {
   room_id bigint
   online_meeting_link varchar
   semester_id bigint [not null]
+  field_id bigint [not null]
 
-  Note: "Recurring weekly template. PostgreSQL deferred triggers enforce teacher-subject qualification and subject-group assignment. ClassMeeting represents a concrete generated occurrence."
+  Note: "Recurring weekly template for one exact semester-field pair. A composite FK requires its group, semester, and field to match. PostgreSQL also enforces curriculum, teacher-subject qualification, and subject-group assignment."
 }
 
 Table class_meeting {
@@ -223,7 +239,7 @@ Table class_meeting {
   group_id bigint [not null]
   schedule_entry_id bigint
 
-  Note: "Concrete lesson. PostgreSQL deferred triggers enforce that the teacher is qualified, the subject belongs to the selected group, the subject is available in the group's semester, the date falls inside the semester period, day_of_week matches meeting_date, valid status transitions are followed, and scheduled/completed classroom meetings have a matching active room booking."
+  Note: "Concrete lesson. Its semester-field context is derived from its group. PostgreSQL deferred triggers enforce teacher qualification, group assignment, exact curriculum membership, semester dates, calendar consistency, lifecycle rules, and classroom booking requirements."
 }
 
 Table attendance {
@@ -314,9 +330,10 @@ Table notification {
   created_at timestamp [not null]
   recipient_id bigint [not null]
   has_attachment boolean [note: "EmailNotification-specific attribute"]
+  delivery_email varchar [note: "EmailNotification-specific delivery target. For EMAIL rows, PostgreSQL checks that it belongs to recipient_id."]
   display_seconds int [note: "SystemNotification-specific attribute"]
 
-  Note: "Represents Notification inheritance with SINGLE_TABLE strategy. EmailNotification and SystemNotification are not separate database tables; they are rows distinguished by notification_type."
+  Note: "Represents Notification inheritance with SINGLE_TABLE strategy. EmailNotification and SystemNotification are not separate database tables; they are rows distinguished by notification_type. Admin-created email notifications can target selected emails for one user, a student group, or all users."
 }
 
 Table scheduled_notification_task {
@@ -352,11 +369,13 @@ Table user_activity_log {
 Ref: person_emails.person_id > person.id
 
 Ref: student.group_id > student_group.id
-Ref: semester.field_id > field_of_study.id
+Ref: semester_field.semester_id > semester.id
+Ref: semester_field.field_id > field_of_study.id
 Ref: student_group.semester_id > semester.id
+Ref: student_group.(semester_id, field_id) > semester_field.(semester_id, field_id)
 
-Ref: semester_subject.semester_id > semester.id
-Ref: semester_subject.subject_id > subject.id
+Ref: semester_field_subject.(semester_id, field_id) > semester_field.(semester_id, field_id)
+Ref: semester_field_subject.subject_id > subject.id
 
 Ref: subject_group.subject_id > subject.id
 Ref: subject_group.group_id > student_group.id
@@ -369,6 +388,7 @@ Ref: weekly_schedule_entry.subject_id > subject.id
 Ref: weekly_schedule_entry.teacher_id > teacher.id
 Ref: weekly_schedule_entry.room_id > room.id
 Ref: weekly_schedule_entry.semester_id > semester.id
+Ref: weekly_schedule_entry.(group_id, semester_id, field_id) > student_group.(id, semester_id, field_id)
 
 Ref: class_meeting.subject_id > subject.id
 Ref: class_meeting.teacher_id > teacher.id

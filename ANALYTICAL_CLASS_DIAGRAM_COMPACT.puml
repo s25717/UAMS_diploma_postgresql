@@ -118,13 +118,19 @@ Person <|-- Teacher
 Person <|-- Administrator
 Person "1" *-- "1..3" PersonEmail : emails
 
-Field "1" -- "0..*" Semester : contains
+class SemesterFieldSubject <<association class>>
+Field "0..*" -- "1..*" Semester : academic periods
+Semester "1" -- "0..*" SemesterFieldSubject
+Field "1" -- "0..*" SemesterFieldSubject
+Subject "1" -- "0..*" SemesterFieldSubject : curriculum
 Semester "1" -- "0..*" StudentGroup : contains
+Field "1" -- "0..*" StudentGroup : field context
 StudentGroup "1" -- "0..*" Student : students
 StudentGroup "0..*" -- "0..*" Subject : subjects
 Teacher "1" -- "1..5" Subject : qualified subjects
 
 Semester "1" -- "0..*" WeeklyScheduleEntry : templates
+Field "1" -- "0..*" WeeklyScheduleEntry : field context
 StudentGroup "1" -- "0..*" WeeklyScheduleEntry : planned for
 Subject "1" -- "0..*" WeeklyScheduleEntry : subject
 Teacher "1" -- "0..*" WeeklyScheduleEntry : teacher

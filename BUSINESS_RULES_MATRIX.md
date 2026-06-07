@@ -25,9 +25,9 @@ Status legend:
 
 | Rule | Status | Enforcement layer | Evidence / notes |
 |---|---|---|---|
-| BR-08: field of study contains semesters | Implemented | Model/service | `Field.semesters`, `AdminManagementService.createSemester`. Minimum one semester is not DB-enforced. |
-| BR-09: semester belongs to one field | Implemented | PostgreSQL/JPA | `semester.field_id NOT NULL` FK; `Semester.field optional=false`. |
-| BR-10: student group belongs to one semester | Implemented | PostgreSQL/JPA | `student_group.semester_id NOT NULL` FK; `StudentGroup.semester optional=false`. |
+| BR-08: fields and semesters have a many-to-many relationship | Implemented | PostgreSQL/JPA/service | `semester_field` and `Semester.fields`; the admin selects one or more fields for a semester. |
+| BR-09: semester belongs to at least one field | Implemented | PostgreSQL/Java | `@Size(min = 1)` plus deferred PostgreSQL cardinality triggers on `semester` and `semester_field`. |
+| BR-10: student group belongs to one semester-field context | Implemented | PostgreSQL/JPA | Required `student_group.semester_id` and `field_id`; composite FK references `semester_field`. |
 | BR-11: student belongs to at most one group | Implemented | Schema/model | `student.group_id` is a single nullable FK. |
 | BR-12: group maximum size | Implemented | PostgreSQL/service/model | `StudentGroup.maxSize`, service checks on create/update, and PostgreSQL triggers prevent groups exceeding max size. |
 | BR-13: student can view only own group details | Implemented | GUI/repository | Student navigation only exposes own group via `createMyGroupView`. |
@@ -46,7 +46,7 @@ Status legend:
 
 | Rule | Status | Enforcement layer | Evidence / notes |
 |---|---|---|---|
-| BR-19: group has weekly schedule in semester | Implemented | Model/schema | `weekly_schedule_entry.group_id`, `semester_id`. |
+| BR-19: group has weekly schedule in semester and field | Implemented | PostgreSQL/model/schema | `weekly_schedule_entry` stores `group_id`, `semester_id`, and `field_id`; a composite FK requires the exact group context. |
 | BR-20: WeeklyScheduleEntry is a template | Implemented | Model/design | `WeeklyScheduleEntry` stores recurring plan data. |
 | BR-21: ClassMeeting is concrete occurrence | Implemented | Model/design | `ClassMeeting` stores concrete date and time. |
 | BR-22: generated meetings inside semester dates | Implemented | Service | `ScheduleGenerationService` iterates from semester start to end. DB trigger still recommended for manual meetings. |
@@ -59,7 +59,7 @@ Status legend:
 | Rule | Status | Enforcement layer | Evidence / notes |
 |---|---|---|---|
 | BR-26: meeting has subject, teacher, group | Implemented | PostgreSQL/JPA | NOT NULL FKs in `class_meeting`. |
-| BR-27: subject valid for group academic context | Implemented | PostgreSQL/service | `semester_subject` models curriculum availability; triggers require the subject to be available in the group's semester and assigned to the group. |
+| BR-27: subject valid for group academic context | Implemented | PostgreSQL/JPA/service | `semester_field_subject` is the explicit curriculum association; triggers require the subject in the group's exact semester-field pair and in `subject_group`. |
 | BR-28: teacher qualified for subject | Implemented | PostgreSQL/service/model | `trg_class_meeting_teacher_subject`, `ClassMeeting.validateTeacherQualification`. |
 | BR-29: group must exist | Implemented | PostgreSQL | `class_meeting.group_id` FK. |
 | BR-30: meeting time valid | Implemented | PostgreSQL | `chk_class_meeting_time_range`. |
@@ -67,7 +67,7 @@ Status legend:
 | BR-32: meeting may be draft | Implemented | Enum/service | `ClassMeetingStatus.DRAFT`, service allows incomplete draft. |
 | BR-33: scheduled meeting has complete details | Implemented | Service/PostgreSQL | Service validates scheduled meeting details; `chk_class_meeting_details_by_status` and deferred triggers require online links for online meetings and matching active room bookings for scheduled/completed classroom meetings. |
 | BR-34: cancelled meeting is not deleted | Implemented | Service | `ClassMeetingService.cancelClassMeeting` changes status. |
-| BR-35: attendance cannot be marked for cancelled meeting | Implemented | Service/model | `AttendanceRegistrationService`, `ClassMeeting.addAttendance`. |
+| BR-35: attendance cannot be marked for cancelled/draft meeting | Implemented | Service/model | `AttendanceRegistrationService`, `ClassMeeting.addAttendance`; attendance registration is allowed for scheduled meetings and later edits on completed meetings. |
 | BR-36: completed meetings remain in history | Implemented | Repository/GUI | history queries include completed meetings. |
 
 ## Room Booking
@@ -95,8 +95,8 @@ Status legend:
 | BR-50: student cannot edit attendance | Implemented | GUI | Student view uses non-editable table. |
 | BR-51: teacher marks only assigned meetings | Implemented | Service/GUI | `ClassMeetingService.validateCanMarkAttendance`. |
 | BR-52: teacher cannot mark before meeting starts | Implemented | Service | `validateCanMarkAttendance`. |
-| BR-53: teacher cannot mark cancelled meeting | Implemented | Service | `validateCanMarkAttendance` and registration service. |
-| BR-54: admin can mark/edit any non-cancelled meeting | Implemented | GUI/service | Admin save button visible; registration rejects cancelled meetings. |
+| BR-53: teacher cannot mark cancelled/draft meeting | Implemented | Service | `validateCanMarkAttendance` and registration service allow scheduled/completed meetings only. |
+| BR-54: admin can mark/edit scheduled/completed meetings | Implemented | GUI/service | Admin save button visible; registration accepts scheduled/completed meetings and rejects draft/cancelled meetings. |
 | BR-55: attendance registration time stored | Implemented | PostgreSQL/service/model | `Attendance.registrationTime` is saved and updated when attendance is registered. |
 | BR-56: late counts as attended | Implemented | Report service/model | `ReportLine.recalculateAttendancePercentage`, report accumulator. |
 | BR-57: excused shown separately, not attended | Implemented | Report service/model | Excused count separate; percentage uses present+late. |
@@ -124,12 +124,12 @@ Status legend:
 
 | Rule | Status | Enforcement layer | Evidence / notes |
 |---|---|---|---|
-| BR-72: notification recipient is Person | Implemented | Model/schema | `Notification.recipient`, FK to `person`. |
+| BR-72: notification recipient is Person | Implemented | Model/schema | `Notification.recipient`, FK to `person`; email notifications additionally store the exact `delivery_email`. |
 | BR-73: person views only own notifications | Implemented | GUI/repository | My Notifications uses current user id; admin view all separate. |
-| BR-74: admin creates notifications | Implemented | GUI/service | Manage Notifications visible to admin. |
+| BR-74: admin creates notifications | Implemented | GUI/service/PostgreSQL | Manage Notifications visible to admin; admin can target selected emails for a single user, an entire student group, or all users. |
 | BR-75: admin cancels pending notifications | Implemented | Service | `cancelPendingNotification`. |
 | BR-76: sent notifications not freely modified | Implemented | Service | `updateEditableNotification` rejects sent. |
-| BR-77: notification required fields include createdAt | Implemented | Service/PostgreSQL/model | `Notification.createdAt` is persisted; service and PostgreSQL checks enforce title/message/recipient/status for new notification rows. |
+| BR-77: notification required fields include createdAt | Implemented | Service/PostgreSQL/model | `Notification.createdAt` is persisted; service and PostgreSQL checks enforce title/message/recipient/status and, for email notifications, a delivery email owned by the recipient. |
 | BR-78: scheduled task has scheduled time/status/recipient | Implemented | PostgreSQL/service/model | scheduledAt/status required; PostgreSQL check enforces recipients for new task rows; services assign recipients. |
 | BR-79: scheduler processes pending tasks | Implemented | Service/repository | `SystemScheduler.processPendingNotificationTasks` processes only pending due tasks from `findPendingDueTasks`. |
 | BR-80: failed task stores reason and retry count | Implemented | Service/model/schema | scheduler marks failed tasks, stores failure reason, and increments retry count. |
@@ -175,6 +175,7 @@ Status legend:
 5. Completed: manual `ClassMeeting.meetingDate` inside the group's semester dates.
 6. Completed: room availability service checks ignore `CANCELLED` bookings and check overlaps.
 7. Completed: admin history includes reports, room bookings, notifications, scheduled tasks, attendance, meetings, and activity logs.
-8. Completed: `semester_subject` curriculum table for a stronger BR-27 thesis story.
+8. Completed: explicit `semester_field_subject` curriculum association for exact semester-field subject ownership.
 9. Completed: class-meeting lifecycle/status rules with PostgreSQL transition triggers.
 10. Completed: mandatory non-blank checks for core PostgreSQL text fields.
+11. Completed: Semester-Field many-to-many model with group and weekly-schedule academic context constraints.
