@@ -62,6 +62,7 @@ public class SampleDataService {
             StudentGroup group = new StudentGroup("24c");
             field.addSemester(semester);
             semester.addGroup(group);
+            group.setField(field);
 
             Student anna = new Student("Anna", "Nowak", new BirthDate(LocalDate.of(2002, 3, 15)), Set.of("anna.nowak@student.pja.edu.pl"), "s25717");
             Student jan = new Student("Jan", "Kowalski", new BirthDate(LocalDate.of(2001, 5, 10)), Set.of("jan.kowalski@student.pja.edu.pl"), "s25718");
@@ -82,7 +83,6 @@ public class SampleDataService {
             admin.setPasswordHash(passwordService.hash("admin"));
 
             Subject mas = new Subject("MAS");
-            semester.addSubject(mas);
             mas.addGroup(group);
             teacher.addQualifiedSubject(mas);
 
@@ -100,7 +100,8 @@ public class SampleDataService {
                     LocalTime.of(11, 30),
                     laboratoryRoom,
                     null,
-                    semester
+                    semester,
+                    field
             );
 
             ClassMeeting currentTutorial = new ClassMeeting(
@@ -171,6 +172,12 @@ public class SampleDataService {
             Attendance existingLate = new Attendance(AttendanceStatus.LATE, jan, pastLaboratory);
             existingLate.setComment("Arrived 15 minutes late.");
             pastLaboratory.addAttendance(existingLate);
+            Attendance existingAbsent = new Attendance(AttendanceStatus.ABSENT, maria, pastLaboratory);
+            existingAbsent.setComment("Absent from completed laboratory.");
+            pastLaboratory.addAttendance(existingAbsent);
+            Attendance existingExcused = new Attendance(AttendanceStatus.EXCUSED, adam, pastLaboratory);
+            existingExcused.setComment("Excused absence.");
+            pastLaboratory.addAttendance(existingExcused);
             pastLaboratory.complete();
 
             AttendanceReport report = new AttendanceReport(LocalDate.now(), ReportType.COMBINED);
@@ -182,6 +189,7 @@ public class SampleDataService {
             report.addLine(new ReportLine(jan, 1, 0, 0, 0, 1));
 
             em.persist(field);
+            em.persist(semester);
             em.persist(anna);
             em.persist(jan);
             em.persist(maria);
@@ -189,11 +197,12 @@ public class SampleDataService {
             em.persist(teacher);
             em.persist(admin);
             em.persist(mas);
+            em.persist(semester.assignSubject(field, mas));
             em.persist(laboratoryRoom);
             em.persist(lectureRoom);
             em.persist(scheduleEntry);
             em.persist(report);
-            EmailNotification studentNotification = new EmailNotification("Attendance was updated for MAS laboratory", 2, true);
+            EmailNotification studentNotification = new EmailNotification("Attendance was updated for MAS laboratory", 2, true, anna.getPrimaryEmail());
             studentNotification.setRecipient(anna);
             studentNotification.setStatus(NotificationStatus.SENT);
             SystemNotification teacherNotification = new SystemNotification("Current-week MAS tutorial is scheduled in room 201", 2, 45);
@@ -262,12 +271,15 @@ public class SampleDataService {
                         nextAvailableEmployeeNumber(em, "Teacher", "t-login")
                 );
                 teacher.setPasswordHash(passwordService.hash("teacher"));
-                if (semester != null) {
-                    semester.addSubject(subject);
-                }
                 teacher.addQualifiedSubject(subject);
                 em.persist(subject);
                 em.persist(teacher);
+                if (semester != null) {
+                    Field field = semester.getFields().stream()
+                            .findFirst()
+                            .orElseThrow(() -> new IllegalStateException("Demo semester has no field of study."));
+                    em.persist(semester.assignSubject(field, subject));
+                }
             }
             upsertPassword(em, "admin@pja.edu.pl", passwordService.hash("admin"));
             upsertPassword(em, "piotr.kowalski@pja.edu.pl", passwordService.hash("teacher"));

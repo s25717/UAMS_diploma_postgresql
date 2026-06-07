@@ -39,6 +39,7 @@ import model.ActivityLog;
 import model.Attendance;
 import model.AttendanceReport;
 import model.ClassMeeting;
+import model.EmailNotification;
 import model.Field;
 import model.Notification;
 import model.Person;
@@ -70,6 +71,7 @@ import persistence.NotificationRepository;
 import persistence.PersonRepository;
 import persistence.RoomBookingRepository;
 import persistence.ScheduledNotificationTaskRepository;
+import persistence.SemesterRepository;
 import persistence.StudentGroupRepository;
 import persistence.TeacherRepository;
 import persistence.WeeklyScheduleEntryRepository;
@@ -401,8 +403,8 @@ public class AttendanceGuiApp extends Application {
         firstNameColumn.setCellValueFactory(data -> new javafx.beans.property.SimpleStringProperty(data.getValue().getName()));
         TableColumn<Student, String> lastNameColumn = new TableColumn<>("Last name");
         lastNameColumn.setCellValueFactory(data -> new javafx.beans.property.SimpleStringProperty(data.getValue().getSurname()));
-        TableColumn<Student, String> emailColumn = new TableColumn<>("Email");
-        emailColumn.setCellValueFactory(data -> new javafx.beans.property.SimpleStringProperty(data.getValue().getPrimaryEmail()));
+        TableColumn<Student, String> emailColumn = new TableColumn<>("Emails");
+        emailColumn.setCellValueFactory(data -> new javafx.beans.property.SimpleStringProperty(emailsLabel(data.getValue())));
         studentsTableView.getColumns().add(numberColumn);
         studentsTableView.getColumns().add(firstNameColumn);
         studentsTableView.getColumns().add(lastNameColumn);
@@ -554,13 +556,34 @@ public class AttendanceGuiApp extends Application {
         return box;
     }
 
+    private List<String> sortedEmails(Person person) {
+        if (person == null || person.getEmails() == null) {
+            return List.of();
+        }
+        List<String> emails = new ArrayList<>(person.getEmails());
+        emails.sort(String.CASE_INSENSITIVE_ORDER);
+        return emails;
+    }
+
+    private String emailsLabel(Person person) {
+        List<String> emails = sortedEmails(person);
+        return emails.isEmpty() ? "no emails" : String.join(", ", emails);
+    }
+
+    private String personLabelWithAllEmails(Person person) {
+        if (person == null) {
+            return "";
+        }
+        return person.getName() + " " + person.getSurname() + " | emails: " + emailsLabel(person);
+    }
+
     private Node createAdminNotificationView() {
         ObservableList<Notification> notifications = FXCollections.observableArrayList(notificationManagementService.findAllWithRecipients());
         TableView<Notification> table = new TableView<>(notifications);
         TableColumn<Notification, String> recipientColumn = new TableColumn<>("Recipient");
-        recipientColumn.setCellValueFactory(data -> new javafx.beans.property.SimpleStringProperty(
-                data.getValue().getRecipient() == null ? "" : data.getValue().getRecipient().getName() + " " + data.getValue().getRecipient().getSurname()
-        ));
+        recipientColumn.setCellValueFactory(data -> new javafx.beans.property.SimpleStringProperty(notificationRecipientLabel(data.getValue())));
+        TableColumn<Notification, String> emailColumn = new TableColumn<>("Delivery email");
+        emailColumn.setCellValueFactory(data -> new javafx.beans.property.SimpleStringProperty(notificationDeliveryEmail(data.getValue())));
         TableColumn<Notification, String> titleColumn = new TableColumn<>("Title");
         titleColumn.setCellValueFactory(data -> new javafx.beans.property.SimpleStringProperty(safe(data.getValue().getTitle())));
         TableColumn<Notification, String> messageColumn = new TableColumn<>("Message");
@@ -569,50 +592,109 @@ public class AttendanceGuiApp extends Application {
         TableColumn<Notification, String> statusColumn = new TableColumn<>("Status");
         statusColumn.setCellValueFactory(data -> new javafx.beans.property.SimpleStringProperty(String.valueOf(data.getValue().getStatus())));
         table.getColumns().add(recipientColumn);
+        table.getColumns().add(emailColumn);
         table.getColumns().add(titleColumn);
         table.getColumns().add(messageColumn);
         table.getColumns().add(statusColumn);
 
-        ComboBox<Person> recipientBox = new ComboBox<>(FXCollections.observableArrayList(new PersonRepository().findAllWithEmails()));
-        recipientBox.setConverter(converter(person -> person.getName() + " " + person.getSurname() + " | " + person.getPrimaryEmail()));
+        List<Person> people = new PersonRepository().findAllWithEmails();
+        ObservableList<StudentGroup> groups = FXCollections.observableArrayList(new StudentGroupRepository().findAllWithStudents());
+        String singleUserMode = "Single user";
+        String groupMode = "Group";
+        String allUsersMode = "All users";
+        ComboBox<String> targetModeBox = new ComboBox<>(FXCollections.observableArrayList(singleUserMode, groupMode, allUsersMode));
+        targetModeBox.getSelectionModel().select(singleUserMode);
+        ComboBox<Person> recipientBox = new ComboBox<>(FXCollections.observableArrayList(people));
+        recipientBox.setConverter(converter(this::personLabelWithAllEmails));
+        ComboBox<StudentGroup> groupBox = new ComboBox<>(groups);
+        groupBox.setConverter(converter(StudentGroup::getCode));
+        if (!groups.isEmpty()) {
+            groupBox.getSelectionModel().selectFirst();
+        }
+        ListView<NotificationEmailTarget> emailTargetList = new ListView<>();
+        emailTargetList.getSelectionModel().setSelectionMode(SelectionMode.MULTIPLE);
+        emailTargetList.setPrefHeight(130);
+        emailTargetList.setCellFactory(view -> new ListCell<>() {
+            @Override
+            protected void updateItem(NotificationEmailTarget target, boolean empty) {
+                super.updateItem(target, empty);
+                setText(empty || target == null ? null : target.label());
+            }
+        });
         TextField titleField = new TextField();
         titleField.setPromptText("title");
         TextArea messageArea = new TextArea();
         messageArea.setPromptText("notification message");
         messageArea.setPrefRowCount(3);
-        ComboBox<String> channelBox = new ComboBox<>(FXCollections.observableArrayList("SYSTEM"));
-        channelBox.getSelectionModel().select("SYSTEM");
+        ComboBox<String> channelBox = new ComboBox<>(FXCollections.observableArrayList("EMAIL"));
+        channelBox.getSelectionModel().select("EMAIL");
+        channelBox.setDisable(true);
         ComboBox<NotificationStatus> statusBox = new ComboBox<>(FXCollections.observableArrayList(NotificationStatus.values()));
         statusBox.getSelectionModel().select(NotificationStatus.PENDING);
         Label message = new Label();
+        Runnable refreshTargets = () -> {
+            boolean groupSelected = groupMode.equals(targetModeBox.getValue());
+            boolean allSelected = allUsersMode.equals(targetModeBox.getValue());
+            recipientBox.setManaged(!groupSelected && !allSelected);
+            recipientBox.setVisible(!groupSelected && !allSelected);
+            groupBox.setManaged(groupSelected);
+            groupBox.setVisible(groupSelected);
+            refreshNotificationEmailTargets(targetModeBox.getValue(), recipientBox.getValue(), groupBox.getValue(), people, emailTargetList);
+        };
+        targetModeBox.valueProperty().addListener((observable, oldValue, newValue) -> refreshTargets.run());
+        recipientBox.valueProperty().addListener((observable, oldValue, newValue) -> refreshTargets.run());
+        groupBox.valueProperty().addListener((observable, oldValue, newValue) -> refreshTargets.run());
+        if (!people.isEmpty()) {
+            recipientBox.getSelectionModel().selectFirst();
+        } else {
+            refreshTargets.run();
+        }
+        Button selectAllEmails = new Button("Select All Emails");
+        selectAllEmails.setOnAction(event -> emailTargetList.getSelectionModel().selectAll());
+        Button clearEmails = new Button("Clear Email Selection");
+        clearEmails.setOnAction(event -> emailTargetList.getSelectionModel().clearSelection());
 
         Button create = new Button("Create Notification");
         create.setOnAction(event -> runWithMessage(message, () -> {
-            if (recipientBox.getValue() == null || titleField.getText().isBlank() || messageArea.getText().isBlank()) {
-                throw new IllegalArgumentException("Recipient, title, and message are required.");
+            List<NotificationManagementService.EmailRecipient> recipients = emailTargetList.getSelectionModel()
+                    .getSelectedItems()
+                    .stream()
+                    .map(target -> new NotificationManagementService.EmailRecipient(target.person().getId(), target.email()))
+                    .toList();
+            if (recipients.isEmpty() || titleField.getText().isBlank() || messageArea.getText().isBlank()) {
+                throw new IllegalArgumentException("At least one delivery email, title, and message are required.");
             }
-            notificationManagementService.createSystemNotification(recipientBox.getValue().getId(),
-                    titleField.getText(), messageArea.getText(), statusBox.getValue());
+            int created = notificationManagementService.createEmailNotifications(recipients,
+                    titleField.getText(), messageArea.getText(), statusBox.getValue()).size();
             notifications.setAll(notificationManagementService.findAllWithRecipients());
             titleField.clear();
             messageArea.clear();
-            return "Notification created.";
+            return "Created " + created + " email notification(s).";
         }));
 
         table.getSelectionModel().selectedItemProperty().addListener((observable, oldValue, selected) -> {
             if (selected != null) {
-                recipientBox.setValue(selected.getRecipient());
+                targetModeBox.getSelectionModel().select(singleUserMode);
+                recipientBox.setValue(findPersonOption(people, selected.getRecipient()));
                 titleField.setText(safe(selected.getTitle()));
                 messageArea.setText(selected.getMessage());
                 statusBox.setValue(selected.getStatus());
+                refreshTargets.run();
+                if (selected instanceof EmailNotification emailNotification) {
+                    selectNotificationEmailTarget(emailTargetList, emailNotification.getDeliveryEmail());
+                }
             }
         });
 
         Button saveChanges = new Button("Save Changes");
         saveChanges.setOnAction(event -> runWithMessage(message, () -> {
             Notification selected = table.getSelectionModel().getSelectedItem();
+            String deliveryEmail = null;
+            if (selected instanceof EmailNotification) {
+                deliveryEmail = selectedDeliveryEmailForSingleNotification(emailTargetList);
+            }
             notificationManagementService.updateEditableNotification(selected, recipientBox.getValue(),
-                    titleField.getText(), messageArea.getText(), statusBox.getValue());
+                    titleField.getText(), messageArea.getText(), statusBox.getValue(), deliveryEmail);
             notifications.setAll(notificationManagementService.findAllWithRecipients());
             return "Notification updated.";
         }));
@@ -626,7 +708,12 @@ public class AttendanceGuiApp extends Application {
         }));
 
         VBox form = new VBox(8,
+                new HBox(10, new Label("Target"), targetModeBox),
                 recipientBox,
+                groupBox,
+                new Label("Delivery emails"),
+                emailTargetList,
+                new HBox(10, selectAllEmails, clearEmails),
                 titleField,
                 messageArea,
                 new HBox(10, new Label("Channel"), channelBox, new Label("Status"), statusBox),
@@ -638,6 +725,86 @@ public class AttendanceGuiApp extends Application {
         return box;
     }
 
+    private void refreshNotificationEmailTargets(String mode, Person recipient, StudentGroup group,
+                                                 List<Person> allPeople,
+                                                 ListView<NotificationEmailTarget> emailTargetList) {
+        List<NotificationEmailTarget> targets;
+        if ("Group".equals(mode)) {
+            targets = group == null ? List.of() : notificationEmailTargets(new ArrayList<>(group.getStudents()));
+        } else if ("All users".equals(mode)) {
+            targets = notificationEmailTargets(allPeople);
+        } else {
+            targets = recipient == null ? List.of() : notificationEmailTargets(List.of(recipient));
+        }
+        emailTargetList.setItems(FXCollections.observableArrayList(targets));
+        emailTargetList.getSelectionModel().clearSelection();
+        if ("Single user".equals(mode) && recipient != null) {
+            selectNotificationEmailTarget(emailTargetList, recipient.getPrimaryEmail());
+        } else {
+            emailTargetList.getSelectionModel().selectAll();
+        }
+    }
+
+    private List<NotificationEmailTarget> notificationEmailTargets(List<? extends Person> people) {
+        List<Person> sortedPeople = new ArrayList<>(people);
+        sortedPeople.sort(Comparator.comparing(Person::getSurname).thenComparing(Person::getName));
+        List<NotificationEmailTarget> targets = new ArrayList<>();
+        for (Person person : sortedPeople) {
+            for (String email : sortedEmails(person)) {
+                targets.add(new NotificationEmailTarget(person, email));
+            }
+        }
+        return targets;
+    }
+
+    private void selectNotificationEmailTarget(ListView<NotificationEmailTarget> emailTargetList, String email) {
+        emailTargetList.getSelectionModel().clearSelection();
+        if (email == null || email.isBlank()) {
+            return;
+        }
+        for (int i = 0; i < emailTargetList.getItems().size(); i++) {
+            if (emailTargetList.getItems().get(i).email().equalsIgnoreCase(email)) {
+                emailTargetList.getSelectionModel().select(i);
+                return;
+            }
+        }
+    }
+
+    private String selectedDeliveryEmailForSingleNotification(ListView<NotificationEmailTarget> emailTargetList) {
+        List<NotificationEmailTarget> selectedTargets = new ArrayList<>(emailTargetList.getSelectionModel().getSelectedItems());
+        if (selectedTargets.isEmpty()) {
+            throw new IllegalArgumentException("Select one delivery email for the selected notification.");
+        }
+        if (selectedTargets.size() > 1) {
+            throw new IllegalArgumentException("Select only one delivery email when editing one notification.");
+        }
+        return selectedTargets.get(0).email();
+    }
+
+    private Person findPersonOption(List<Person> people, Person selectedRecipient) {
+        if (selectedRecipient == null) {
+            return null;
+        }
+        return people.stream()
+                .filter(person -> person.getId().equals(selectedRecipient.getId()))
+                .findFirst()
+                .orElse(selectedRecipient);
+    }
+
+    private String notificationRecipientLabel(Notification notification) {
+        if (notification == null || notification.getRecipient() == null) {
+            return "";
+        }
+        return personLabelWithAllEmails(notification.getRecipient());
+    }
+
+    private String notificationDeliveryEmail(Notification notification) {
+        if (notification instanceof EmailNotification emailNotification) {
+            return safe(emailNotification.getDeliveryEmail());
+        }
+        return "";
+    }
+
     private ListCell<Notification> notificationCell() {
         return new ListCell<>() {
             @Override
@@ -647,11 +814,18 @@ public class AttendanceGuiApp extends Application {
                     setText(null);
                     return;
                 }
-                String recipient = notification.getRecipient() == null ? "no recipient"
-                        : notification.getRecipient().getName() + " " + notification.getRecipient().getSurname();
-                setText(notification.getStatus() + " | " + recipient + " | " + notification.getMessage());
+                String recipient = notificationRecipientLabel(notification);
+                String deliveryEmail = notificationDeliveryEmail(notification);
+                String target = deliveryEmail.isBlank() ? recipient : recipient + " | " + deliveryEmail;
+                setText(notification.getStatus() + " | " + target + " | " + notification.getMessage());
             }
         };
+    }
+
+    private record NotificationEmailTarget(Person person, String email) {
+        private String label() {
+            return person.getName() + " " + person.getSurname() + " | " + email;
+        }
     }
 
     private ListCell<WeeklyScheduleEntry> weeklyScheduleEntryCell() {
@@ -667,6 +841,9 @@ public class AttendanceGuiApp extends Application {
                         ? (entry.getRoom() == null ? "" : "Room " + entry.getRoom().getRoomNumber())
                         : "Link " + safe(entry.getOnlineMeetingLink());
                 setText(entry.getDayOfWeek() + " | " + entry.getStartTime() + "-" + entry.getEndTime()
+                        + " | " + entry.getGroup().getCode()
+                        + " | Semester " + entry.getSemester().getNumber()
+                        + " | " + entry.getField().getName()
                         + " | " + entry.getSubject().getName()
                         + " | " + entry.getClassType()
                         + " | " + entry.getTeacher().getName() + " " + entry.getTeacher().getSurname()
@@ -844,9 +1021,10 @@ public class AttendanceGuiApp extends Application {
                     setText(null);
                     return;
                 }
-                String recipient = notification.getRecipient() == null ? "no recipient"
-                        : notification.getRecipient().getName() + " " + notification.getRecipient().getSurname();
-                setText(notification.getCreatedAt() + " | " + notification.getStatus() + " | " + recipient + " | " + notification.getTitle());
+                String recipient = notificationRecipientLabel(notification);
+                String deliveryEmail = notificationDeliveryEmail(notification);
+                String target = deliveryEmail.isBlank() ? recipient : recipient + " | " + deliveryEmail;
+                setText(notification.getCreatedAt() + " | " + notification.getStatus() + " | " + target + " | " + notification.getTitle());
             }
         });
         VBox box = new VBox(10, new Label("All notifications"), list);
@@ -918,7 +1096,7 @@ public class AttendanceGuiApp extends Application {
         VBox box = new VBox(10,
                 new Label("Group: " + group.getCode()),
                 new Label("Semester: " + group.getSemester().getNumber()),
-                new Label("Field of study: " + group.getSemester().getField().getName()),
+                new Label("Field of study: " + group.getField().getName()),
                 new Label("Students in my group"),
                 students,
                 new Label("Group weekly schedule"),
@@ -936,6 +1114,17 @@ public class AttendanceGuiApp extends Application {
         return tabs;
     }
 
+    private void refreshAdminUserEmailView(Person person, ObservableList<String> selectedUserEmails,
+                                           Label selectedPrimaryEmailLabel) {
+        if (person == null) {
+            selectedUserEmails.clear();
+            selectedPrimaryEmailLabel.setText("Primary email: ");
+            return;
+        }
+        selectedUserEmails.setAll(sortedEmails(person));
+        selectedPrimaryEmailLabel.setText("Primary email: " + person.getPrimaryEmail());
+    }
+
     private Node createUserManagementPane() {
         ObservableList<Person> userItems = FXCollections.observableArrayList(new PersonRepository().findAllWithEmails());
         ObservableList<StudentGroup> groupItems = FXCollections.observableArrayList(new GenericRepository<>(StudentGroup.class).findAll());
@@ -946,7 +1135,7 @@ public class AttendanceGuiApp extends Application {
             @Override
             protected void updateItem(Person person, boolean empty) {
                 super.updateItem(person, empty);
-                setText(empty || person == null ? null : roleName(person) + " | " + person.getName() + " " + person.getSurname() + " | " + person.getPrimaryEmail());
+                setText(empty || person == null ? null : roleName(person) + " | " + personLabelWithAllEmails(person));
             }
         });
 
@@ -958,7 +1147,16 @@ public class AttendanceGuiApp extends Application {
         surnameField.setPromptText("last name");
         DatePicker birthDatePicker = new DatePicker(LocalDate.of(2000, 1, 1));
         TextField emailField = new TextField();
-        emailField.setPromptText("primary email");
+        emailField.setPromptText("email for create/add/edit");
+        ObservableList<String> selectedUserEmails = FXCollections.observableArrayList();
+        ListView<String> selectedUserEmailList = new ListView<>(selectedUserEmails);
+        selectedUserEmailList.setPrefHeight(96);
+        selectedUserEmailList.getSelectionModel().selectedItemProperty().addListener((observable, oldEmail, selectedEmail) -> {
+            if (selectedEmail != null) {
+                emailField.setText(selectedEmail);
+            }
+        });
+        Label selectedPrimaryEmailLabel = new Label("Primary email: ");
         TextField passwordField = new TextField("Password123!");
         TextField numberField = new TextField();
         numberField.setPromptText("student number / employee number");
@@ -978,6 +1176,23 @@ public class AttendanceGuiApp extends Application {
         Label message = new Label();
 
         Runnable refreshUsers = () -> userItems.setAll(new PersonRepository().findAllWithEmails());
+        Runnable refreshSelectedUser = () -> {
+            Person selected = users.getSelectionModel().getSelectedItem();
+            Long selectedId = selected == null ? null : selected.getId();
+            refreshUsers.run();
+            if (selectedId == null) {
+                selectedUserEmails.clear();
+                selectedPrimaryEmailLabel.setText("Primary email: ");
+                return;
+            }
+            userItems.stream()
+                    .filter(user -> user.getId().equals(selectedId))
+                    .findFirst()
+                    .ifPresent(refreshed -> {
+                        users.getSelectionModel().select(refreshed);
+                        refreshAdminUserEmailView(refreshed, selectedUserEmails, selectedPrimaryEmailLabel);
+                    });
+        };
         Runnable refreshReferenceLists = () -> {
             groupItems.setAll(new GenericRepository<>(StudentGroup.class).findAll());
             subjectItems.setAll(new GenericRepository<>(Subject.class).findAll());
@@ -992,6 +1207,7 @@ public class AttendanceGuiApp extends Application {
             surnameField.setText(selected.getSurname());
             birthDatePicker.setValue(selected.getBirthDate() == null ? LocalDate.of(2000, 1, 1) : selected.getBirthDate().getValue());
             emailField.setText(selected.getPrimaryEmail());
+            refreshAdminUserEmailView(selected, selectedUserEmails, selectedPrimaryEmailLabel);
             passwordField.clear();
             if (selected instanceof Student student) {
                 numberField.setText(student.getStudentNumber());
@@ -1032,9 +1248,56 @@ public class AttendanceGuiApp extends Application {
             if (selected == null) {
                 throw new IllegalArgumentException("Select a user first.");
             }
-            adminManagementService.updatePersonBasics(selected.getId(), nameField.getText(), surnameField.getText(), emailField.getText(), passwordField.getText());
-            refreshUsers.run();
+            adminManagementService.updatePersonBasics(selected.getId(), nameField.getText(), surnameField.getText(), passwordField.getText());
+            refreshSelectedUser.run();
             return "User basic data updated.";
+        }));
+
+        Button addEmail = new Button("Add Email");
+        addEmail.setOnAction(event -> runWithMessage(message, () -> {
+            Person selected = users.getSelectionModel().getSelectedItem();
+            if (selected == null) {
+                throw new IllegalArgumentException("Select a user first.");
+            }
+            personalSettingsService.addEmail(selected.getId(), emailField.getText());
+            refreshSelectedUser.run();
+            return "Email added.";
+        }));
+
+        Button editEmail = new Button("Edit Selected Email");
+        editEmail.setOnAction(event -> runWithMessage(message, () -> {
+            Person selected = users.getSelectionModel().getSelectedItem();
+            String oldEmail = selectedUserEmailList.getSelectionModel().getSelectedItem();
+            if (selected == null || oldEmail == null) {
+                throw new IllegalArgumentException("Select a user and an email first.");
+            }
+            personalSettingsService.editEmail(selected.getId(), oldEmail, emailField.getText());
+            refreshSelectedUser.run();
+            return "Email updated.";
+        }));
+
+        Button deleteEmail = new Button("Delete Selected Email");
+        deleteEmail.setOnAction(event -> runWithMessage(message, () -> {
+            Person selected = users.getSelectionModel().getSelectedItem();
+            String email = selectedUserEmailList.getSelectionModel().getSelectedItem();
+            if (selected == null || email == null) {
+                throw new IllegalArgumentException("Select a user and an email first.");
+            }
+            personalSettingsService.deleteEmail(selected.getId(), email);
+            refreshSelectedUser.run();
+            return "Email deleted.";
+        }));
+
+        Button makePrimaryEmail = new Button("Make Primary");
+        makePrimaryEmail.setOnAction(event -> runWithMessage(message, () -> {
+            Person selected = users.getSelectionModel().getSelectedItem();
+            String email = selectedUserEmailList.getSelectionModel().getSelectedItem();
+            if (selected == null || email == null) {
+                throw new IllegalArgumentException("Select a user and an email first.");
+            }
+            personalSettingsService.setPrimaryEmail(selected.getId(), email);
+            refreshSelectedUser.run();
+            return "Primary email changed.";
         }));
 
         Button delete = new Button("Delete User");
@@ -1078,8 +1341,12 @@ public class AttendanceGuiApp extends Application {
         form.add(qualifiedSubjects, 1, 8);
 
         VBox right = new VBox(10,
-                new Label("Create users, create administrator accounts, and edit basic personal data."),
+                new Label("Create users, create administrator accounts, edit basic personal data, and manage all user emails."),
                 form,
+                selectedPrimaryEmailLabel,
+                new Label("All emails for selected user"),
+                selectedUserEmailList,
+                new HBox(10, addEmail, editEmail, deleteEmail, makePrimaryEmail),
                 new HBox(10, create, saveBasics, delete, refresh),
                 message
         );
@@ -1096,8 +1363,8 @@ public class AttendanceGuiApp extends Application {
 
     private Node createAcademicStructurePane() {
         ObservableList<Field> fields = FXCollections.observableArrayList(new GenericRepository<>(Field.class).findAll());
-        ObservableList<Semester> semesters = FXCollections.observableArrayList(new GenericRepository<>(Semester.class).findAll());
-        ObservableList<StudentGroup> groups = FXCollections.observableArrayList(new GenericRepository<>(StudentGroup.class).findAll());
+        ObservableList<Semester> semesters = FXCollections.observableArrayList(new SemesterRepository().findAllWithFields());
+        ObservableList<StudentGroup> groups = FXCollections.observableArrayList(new StudentGroupRepository().findAllWithAcademicContext());
         ObservableList<Subject> subjects = FXCollections.observableArrayList(new GenericRepository<>(Subject.class).findAll());
 
         ListView<Field> fieldList = new ListView<>(fields);
@@ -1116,15 +1383,23 @@ public class AttendanceGuiApp extends Application {
             @Override
             protected void updateItem(Semester semester, boolean empty) {
                 super.updateItem(semester, empty);
-                setText(empty || semester == null ? null : "Semester " + semester.getNumber());
+                setText(empty || semester == null ? null : semesterAcademicLabel(semester));
             }
         });
         TextField semesterNumber = new TextField();
         semesterNumber.setPromptText("number");
         DatePicker semesterStart = new DatePicker(LocalDate.now().minusWeeks(4));
         DatePicker semesterEnd = new DatePicker(LocalDate.now().plusWeeks(12));
-        ComboBox<Field> semesterField = new ComboBox<>(fields);
-        semesterField.setConverter(converter(Field::getName));
+        ListView<Field> semesterFields = new ListView<>(fields);
+        semesterFields.getSelectionModel().setSelectionMode(SelectionMode.MULTIPLE);
+        semesterFields.setPrefHeight(110);
+        semesterFields.setCellFactory(view -> new ListCell<>() {
+            @Override
+            protected void updateItem(Field field, boolean empty) {
+                super.updateItem(field, empty);
+                setText(empty || field == null ? null : field.getName());
+            }
+        });
 
         ListView<StudentGroup> groupList = new ListView<>(groups);
         groupList.setCellFactory(view -> new ListCell<>() {
@@ -1139,7 +1414,9 @@ public class AttendanceGuiApp extends Application {
         TextField groupMaxSize = new TextField("30");
         groupMaxSize.setPromptText("max size");
         ComboBox<Semester> groupSemester = new ComboBox<>(semesters);
-        groupSemester.setConverter(converter(semester -> "Semester " + semester.getNumber()));
+        groupSemester.setConverter(converter(this::semesterAcademicLabel));
+        ComboBox<Field> groupField = new ComboBox<>();
+        groupField.setConverter(converter(Field::getName));
 
         ListView<Subject> subjectList = new ListView<>(subjects);
         subjectList.setCellFactory(view -> new ListCell<>() {
@@ -1154,15 +1431,32 @@ public class AttendanceGuiApp extends Application {
         ComboBox<StudentGroup> subjectGroup = new ComboBox<>(groups);
         subjectGroup.setConverter(converter(StudentGroup::getCode));
         ComboBox<Semester> subjectSemester = new ComboBox<>(semesters);
-        subjectSemester.setConverter(converter(semester -> "Semester " + semester.getNumber()));
+        subjectSemester.setConverter(converter(this::semesterAcademicLabel));
+        ComboBox<Field> subjectField = new ComboBox<>();
+        subjectField.setConverter(converter(Field::getName));
 
         Label message = new Label();
         Runnable refresh = () -> {
             fields.setAll(new GenericRepository<>(Field.class).findAll());
-            semesters.setAll(new GenericRepository<>(Semester.class).findAll());
-            groups.setAll(new GenericRepository<>(StudentGroup.class).findAll());
+            semesters.setAll(new SemesterRepository().findAllWithFields());
+            groups.setAll(new StudentGroupRepository().findAllWithAcademicContext());
             subjects.setAll(new GenericRepository<>(Subject.class).findAll());
         };
+
+        groupSemester.valueProperty().addListener((observable, oldValue, selected) -> {
+            groupField.getItems().setAll(selected == null ? Set.of() : selected.getFields());
+            if (selected == null || groupField.getValue() == null
+                    || selected.getFields().stream().noneMatch(field -> field.getId().equals(groupField.getValue().getId()))) {
+                groupField.setValue(null);
+            }
+        });
+        subjectSemester.valueProperty().addListener((observable, oldValue, selected) -> {
+            subjectField.getItems().setAll(selected == null ? Set.of() : selected.getFields());
+            if (selected == null || subjectField.getValue() == null
+                    || selected.getFields().stream().noneMatch(field -> field.getId().equals(subjectField.getValue().getId()))) {
+                subjectField.setValue(null);
+            }
+        });
 
         fieldList.getSelectionModel().selectedItemProperty().addListener((observable, oldValue, selected) -> {
             if (selected != null) {
@@ -1174,7 +1468,11 @@ public class AttendanceGuiApp extends Application {
                 semesterNumber.setText(String.valueOf(selected.getNumber()));
                 semesterStart.setValue(selected.getStartDate());
                 semesterEnd.setValue(selected.getEndDate());
-                semesterField.setValue(selected.getField());
+                semesterFields.getSelectionModel().clearSelection();
+                Set<Long> selectedFieldIds = selected.getFields().stream().map(Field::getId).collect(java.util.stream.Collectors.toSet());
+                fields.stream()
+                        .filter(field -> selectedFieldIds.contains(field.getId()))
+                        .forEach(field -> semesterFields.getSelectionModel().select(field));
             }
         });
         groupList.getSelectionModel().selectedItemProperty().addListener((observable, oldValue, selected) -> {
@@ -1182,6 +1480,8 @@ public class AttendanceGuiApp extends Application {
                 groupCode.setText(selected.getCode());
                 groupMaxSize.setText(String.valueOf(selected.getMaxSize()));
                 groupSemester.setValue(selected.getSemester());
+                groupField.getItems().setAll(selected.getSemester().getFields());
+                groupField.setValue(selected.getField());
             }
         });
         subjectList.getSelectionModel().selectedItemProperty().addListener((observable, oldValue, selected) -> {
@@ -1213,17 +1513,21 @@ public class AttendanceGuiApp extends Application {
 
         Button createSemester = new Button("Create Semester");
         createSemester.setOnAction(event -> runWithMessage(message, () -> {
-            Field field = semesterField.getValue();
-            adminManagementService.createSemester(Integer.parseInt(semesterNumber.getText()), semesterStart.getValue(), semesterEnd.getValue(), field == null ? null : field.getId());
+            Set<Long> fieldIds = semesterFields.getSelectionModel().getSelectedItems().stream()
+                    .map(Field::getId)
+                    .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
+            adminManagementService.createSemester(Integer.parseInt(semesterNumber.getText()), semesterStart.getValue(), semesterEnd.getValue(), fieldIds);
             refresh.run();
             return "Semester created.";
         }));
         Button updateSemester = new Button("Save Semester");
         updateSemester.setOnAction(event -> runWithMessage(message, () -> {
             Semester selected = semesterList.getSelectionModel().getSelectedItem();
-            Field field = semesterField.getValue();
+            Set<Long> fieldIds = semesterFields.getSelectionModel().getSelectedItems().stream()
+                    .map(Field::getId)
+                    .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
             adminManagementService.updateSemester(selected == null ? null : selected.getId(), Integer.parseInt(semesterNumber.getText()),
-                    semesterStart.getValue(), semesterEnd.getValue(), field == null ? null : field.getId());
+                    semesterStart.getValue(), semesterEnd.getValue(), fieldIds);
             refresh.run();
             return "Semester updated.";
         }));
@@ -1238,7 +1542,9 @@ public class AttendanceGuiApp extends Application {
         Button createGroup = new Button("Create Group");
         createGroup.setOnAction(event -> runWithMessage(message, () -> {
             Semester semester = groupSemester.getValue();
-            adminManagementService.createGroup(groupCode.getText(), semester == null ? null : semester.getId(), Integer.parseInt(groupMaxSize.getText()));
+            Field field = groupField.getValue();
+            adminManagementService.createGroup(groupCode.getText(), semester == null ? null : semester.getId(),
+                    field == null ? null : field.getId(), Integer.parseInt(groupMaxSize.getText()));
             refresh.run();
             return "Group created.";
         }));
@@ -1246,8 +1552,10 @@ public class AttendanceGuiApp extends Application {
         updateGroup.setOnAction(event -> runWithMessage(message, () -> {
             StudentGroup selected = groupList.getSelectionModel().getSelectedItem();
             Semester semester = groupSemester.getValue();
+            Field field = groupField.getValue();
             adminManagementService.updateGroup(selected == null ? null : selected.getId(), groupCode.getText(),
-                    semester == null ? null : semester.getId(), Integer.parseInt(groupMaxSize.getText()));
+                    semester == null ? null : semester.getId(), field == null ? null : field.getId(),
+                    Integer.parseInt(groupMaxSize.getText()));
             refresh.run();
             return "Group updated.";
         }));
@@ -1295,31 +1603,38 @@ public class AttendanceGuiApp extends Application {
             refresh.run();
             return "Subject removed from group.";
         }));
-        Button assignSubjectSemester = new Button("Assign Subject To Semester");
+        Button assignSubjectSemester = new Button("Assign To Curriculum");
         assignSubjectSemester.setOnAction(event -> runWithMessage(message, () -> {
             Subject subject = subjectList.getSelectionModel().getSelectedItem();
             Semester semester = subjectSemester.getValue();
-            adminManagementService.assignSubjectToSemester(subject == null ? null : subject.getId(), semester == null ? null : semester.getId());
+            Field field = subjectField.getValue();
+            adminManagementService.assignSubjectToSemesterField(subject == null ? null : subject.getId(),
+                    semester == null ? null : semester.getId(), field == null ? null : field.getId());
             refresh.run();
-            return "Subject assigned to semester.";
+            return "Subject assigned to semester and field curriculum.";
         }));
-        Button removeSubjectSemester = new Button("Remove Subject From Semester");
+        Button removeSubjectSemester = new Button("Remove From Curriculum");
         removeSubjectSemester.setOnAction(event -> runWithMessage(message, () -> {
             Subject subject = subjectList.getSelectionModel().getSelectedItem();
             Semester semester = subjectSemester.getValue();
-            adminManagementService.removeSubjectFromSemester(subject == null ? null : subject.getId(), semester == null ? null : semester.getId());
+            Field field = subjectField.getValue();
+            adminManagementService.removeSubjectFromSemesterField(subject == null ? null : subject.getId(),
+                    semester == null ? null : semester.getId(), field == null ? null : field.getId());
             refresh.run();
-            return "Subject removed from semester.";
+            return "Subject removed from semester and field curriculum.";
         }));
 
         VBox fieldBox = new VBox(8, new Label("Fields of study"), fieldList, fieldName, new HBox(8, createField, updateField, deleteField));
         VBox semesterBox = new VBox(8, new Label("Semesters"), semesterList, semesterNumber,
-                new HBox(8, new Label("From"), semesterStart, new Label("To"), semesterEnd), semesterField,
+                new HBox(8, new Label("From"), semesterStart, new Label("To"), semesterEnd),
+                new Label("Fields in this semester"), semesterFields,
                 new HBox(8, createSemester, updateSemester, deleteSemester));
-        VBox groupBox = new VBox(8, new Label("Groups"), groupList, groupCode, groupMaxSize, groupSemester, new HBox(8, createGroup, updateGroup, deleteGroup));
+        VBox groupBox = new VBox(8, new Label("Groups"), groupList, groupCode, groupMaxSize,
+                groupSemester, groupField, new HBox(8, createGroup, updateGroup, deleteGroup));
         VBox subjectBox = new VBox(8, new Label("Subjects"), subjectList, subjectName,
                 new HBox(8, createSubject, updateSubject, deleteSubject),
-                new Label("Subject-semester curriculum"), subjectSemester, new HBox(8, assignSubjectSemester, removeSubjectSemester),
+                new Label("Subject curriculum"), subjectSemester, subjectField,
+                new HBox(8, assignSubjectSemester, removeSubjectSemester),
                 new Label("Subject-group assignment"), subjectGroup, new HBox(8, assignSubjectGroup, removeSubjectGroup));
 
         HBox columns = new HBox(12, fieldBox, semesterBox, groupBox, subjectBox);
@@ -1460,7 +1775,9 @@ public class AttendanceGuiApp extends Application {
         Label message = new Label();
         ComboBox<Teacher> teacherBox = new ComboBox<>();
         ComboBox<Subject> subjectBox = new ComboBox<>();
-        ComboBox<StudentGroup> groupBox = new ComboBox<>(FXCollections.observableArrayList(new GenericRepository<>(StudentGroup.class).findAll()));
+        ComboBox<StudentGroup> groupBox = new ComboBox<>(FXCollections.observableArrayList(
+                new StudentGroupRepository().findAllWithAcademicContext()
+        ));
         ComboBox<Room> roomBox = new ComboBox<>(FXCollections.observableArrayList(roomService.findAll()));
         ComboBox<ClassType> classTypeBox = new ComboBox<>(FXCollections.observableArrayList(ClassType.values()));
         ComboBox<MeetingMode> modeBox = new ComboBox<>(FXCollections.observableArrayList(MeetingMode.values()));
@@ -1559,8 +1876,11 @@ public class AttendanceGuiApp extends Application {
         ListView<WeeklyScheduleEntry> entriesList = new ListView<>(entries);
         entriesList.setCellFactory(view -> weeklyScheduleEntryCell());
 
-        ComboBox<StudentGroup> groupBox = new ComboBox<>(FXCollections.observableArrayList(new GenericRepository<>(StudentGroup.class).findAll()));
-        ComboBox<Semester> semesterBox = new ComboBox<>(FXCollections.observableArrayList(new GenericRepository<>(Semester.class).findAll()));
+        ComboBox<StudentGroup> groupBox = new ComboBox<>(FXCollections.observableArrayList(
+                new StudentGroupRepository().findAllWithAcademicContext()
+        ));
+        ComboBox<Semester> semesterBox = new ComboBox<>(FXCollections.observableArrayList(new SemesterRepository().findAllWithFields()));
+        ComboBox<Field> fieldBox = new ComboBox<>(FXCollections.observableArrayList(new GenericRepository<>(Field.class).findAll()));
         ComboBox<Subject> subjectBox = new ComboBox<>(FXCollections.observableArrayList(new GenericRepository<>(Subject.class).findAll()));
         ComboBox<Teacher> teacherBox = new ComboBox<>(FXCollections.observableArrayList(new GenericRepository<>(Teacher.class).findAll()));
         ComboBox<ClassType> classTypeBox = new ComboBox<>(FXCollections.observableArrayList(ClassType.values()));
@@ -1575,13 +1895,23 @@ public class AttendanceGuiApp extends Application {
 
         groupBox.setConverter(converter(StudentGroup::getCode));
         semesterBox.setConverter(converter(semester -> "Semester " + semester.getNumber()));
+        fieldBox.setConverter(converter(Field::getName));
         subjectBox.setConverter(converter(Subject::getName));
         teacherBox.setConverter(converter(teacher -> teacher.getName() + " " + teacher.getSurname()));
         roomBox.setConverter(converter(Room::getRoomNumber));
 
+        groupBox.valueProperty().addListener((observable, oldValue, selected) -> {
+            if (selected != null) {
+                semesterBox.setValue(selected.getSemester());
+                fieldBox.setValue(selected.getField());
+            }
+        });
+        semesterBox.setDisable(true);
+        fieldBox.setDisable(true);
+
         Button save = new Button("Save Weekly Schedule Entry");
         save.setOnAction(event -> runWithMessage(message, () -> {
-            WeeklyScheduleEntry entry = buildWeeklyScheduleEntry(groupBox, semesterBox, subjectBox, teacherBox,
+            WeeklyScheduleEntry entry = buildWeeklyScheduleEntry(groupBox, semesterBox, fieldBox, subjectBox, teacherBox,
                     classTypeBox, modeBox, dayBox, startField, endField, roomBox, onlineLinkField);
             weeklyScheduleEntryRepository.saveWithManagedReferences(entry);
             entries.setAll(weeklyScheduleEntryRepository.findAllWithDetails());
@@ -1592,7 +1922,7 @@ public class AttendanceGuiApp extends Application {
         generate.setOnAction(event -> runWithMessage(message, () -> {
             WeeklyScheduleEntry selected = entriesList.getSelectionModel().getSelectedItem();
             if (selected == null) {
-                selected = buildWeeklyScheduleEntry(groupBox, semesterBox, subjectBox, teacherBox,
+                selected = buildWeeklyScheduleEntry(groupBox, semesterBox, fieldBox, subjectBox, teacherBox,
                         classTypeBox, modeBox, dayBox, startField, endField, roomBox, onlineLinkField);
                 selected = weeklyScheduleEntryRepository.saveWithManagedReferences(selected);
                 entries.setAll(weeklyScheduleEntryRepository.findAllWithDetails());
@@ -1609,26 +1939,28 @@ public class AttendanceGuiApp extends Application {
         form.add(groupBox, 1, 0);
         form.add(new Label("Semester"), 0, 1);
         form.add(semesterBox, 1, 1);
-        form.add(new Label("Subject"), 0, 2);
-        form.add(subjectBox, 1, 2);
-        form.add(new Label("Teacher"), 0, 3);
-        form.add(teacherBox, 1, 3);
-        form.add(new Label("Class type"), 0, 4);
-        form.add(classTypeBox, 1, 4);
-        form.add(new Label("Meeting mode"), 0, 5);
-        form.add(modeBox, 1, 5);
-        form.add(new Label("Day of week"), 0, 6);
-        form.add(dayBox, 1, 6);
-        form.add(new Label("Start time"), 0, 7);
-        form.add(startField, 1, 7);
-        form.add(new Label("End time"), 0, 8);
-        form.add(endField, 1, 8);
-        form.add(new Label("Room"), 0, 9);
-        form.add(roomBox, 1, 9);
-        form.add(new Label("Online link"), 0, 10);
-        form.add(onlineLinkField, 1, 10);
-        form.add(new HBox(10, save, generate), 1, 11);
-        form.add(message, 1, 12);
+        form.add(new Label("Field"), 0, 2);
+        form.add(fieldBox, 1, 2);
+        form.add(new Label("Subject"), 0, 3);
+        form.add(subjectBox, 1, 3);
+        form.add(new Label("Teacher"), 0, 4);
+        form.add(teacherBox, 1, 4);
+        form.add(new Label("Class type"), 0, 5);
+        form.add(classTypeBox, 1, 5);
+        form.add(new Label("Meeting mode"), 0, 6);
+        form.add(modeBox, 1, 6);
+        form.add(new Label("Day of week"), 0, 7);
+        form.add(dayBox, 1, 7);
+        form.add(new Label("Start time"), 0, 8);
+        form.add(startField, 1, 8);
+        form.add(new Label("End time"), 0, 9);
+        form.add(endField, 1, 9);
+        form.add(new Label("Room"), 0, 10);
+        form.add(roomBox, 1, 10);
+        form.add(new Label("Online link"), 0, 11);
+        form.add(onlineLinkField, 1, 11);
+        form.add(new HBox(10, save, generate), 1, 12);
+        form.add(message, 1, 13);
 
         VBox box = new VBox(10,
                 new Label("Existing weekly schedule entries"),
@@ -1643,6 +1975,7 @@ public class AttendanceGuiApp extends Application {
 
     private WeeklyScheduleEntry buildWeeklyScheduleEntry(ComboBox<StudentGroup> groupBox,
                                                          ComboBox<Semester> semesterBox,
+                                                         ComboBox<Field> fieldBox,
                                                          ComboBox<Subject> subjectBox,
                                                          ComboBox<Teacher> teacherBox,
                                                          ComboBox<ClassType> classTypeBox,
@@ -1654,11 +1987,12 @@ public class AttendanceGuiApp extends Application {
                                                          TextField onlineLinkField) {
         StudentGroup group = groupBox.getValue();
         Semester semester = semesterBox.getValue();
+        Field field = fieldBox.getValue();
         Subject subject = subjectBox.getValue();
         Teacher selectedTeacher = teacherBox.getValue();
-        if (group == null || semester == null || subject == null || selectedTeacher == null
+        if (group == null || semester == null || field == null || subject == null || selectedTeacher == null
                 || classTypeBox.getValue() == null || modeBox.getValue() == null || dayBox.getValue() == null) {
-            throw new IllegalArgumentException("Group, semester, subject, teacher, type, mode, and day are required.");
+            throw new IllegalArgumentException("Group, semester, field, subject, teacher, type, mode, and day are required.");
         }
         Teacher teacher = new TeacherRepository().findByIdWithQualifiedSubjects(selectedTeacher.getId())
                 .orElseThrow(() -> new IllegalArgumentException("Teacher not found."));
@@ -1679,7 +2013,7 @@ public class AttendanceGuiApp extends Application {
             throw new IllegalArgumentException("Online link is required for online weekly schedule.");
         }
         return new WeeklyScheduleEntry(group, subject, teacher, classTypeBox.getValue(), modeBox.getValue(),
-                dayBox.getValue(), start, end, room, onlineLink, semester);
+                dayBox.getValue(), start, end, room, onlineLink, semester, field);
     }
 
     private BorderPane createAdminReportView() {
@@ -2006,6 +2340,14 @@ public class AttendanceGuiApp extends Application {
         } catch (RuntimeException ex) {
             label.setText(ex.getMessage());
         }
+    }
+
+    private String semesterAcademicLabel(Semester semester) {
+        String fieldNames = semester.getFields().stream()
+                .map(Field::getName)
+                .sorted()
+                .collect(java.util.stream.Collectors.joining(", "));
+        return "Semester " + semester.getNumber() + (fieldNames.isBlank() ? "" : " | " + fieldNames);
     }
 
     private <T> StringConverter<T> converter(java.util.function.Function<T, String> label) {

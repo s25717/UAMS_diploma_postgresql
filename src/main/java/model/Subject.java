@@ -40,8 +40,8 @@ public class Subject {
     @ManyToMany(mappedBy = "qualifiedSubjects", fetch = FetchType.LAZY)
     private Set<Teacher> qualifiedTeachers = new HashSet<>();
 
-    @ManyToMany(mappedBy = "subjects", fetch = FetchType.LAZY)
-    private Set<Semester> semesters = new HashSet<>();
+    @OneToMany(mappedBy = "subject")
+    private Set<SemesterFieldSubject> curriculumAssignments = new HashSet<>();
 
     protected Subject() {
     }
@@ -90,12 +90,12 @@ public class Subject {
         this.qualifiedTeachers = qualifiedTeachers;
     }
 
-    public Set<Semester> getSemesters() {
-        return semesters;
+    public Set<SemesterFieldSubject> getCurriculumAssignments() {
+        return curriculumAssignments;
     }
 
-    public void setSemesters(Set<Semester> semesters) {
-        this.semesters = semesters;
+    public void setCurriculumAssignments(Set<SemesterFieldSubject> curriculumAssignments) {
+        this.curriculumAssignments = curriculumAssignments;
     }
 
     public void addGroup(StudentGroup group) {

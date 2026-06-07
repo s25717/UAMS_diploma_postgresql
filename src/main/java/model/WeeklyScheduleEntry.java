@@ -60,12 +60,16 @@ public class WeeklyScheduleEntry {
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     private Semester semester;
 
+    @NotNull
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    private Field field;
+
     protected WeeklyScheduleEntry() {
     }
 
     public WeeklyScheduleEntry(StudentGroup group, Subject subject, Teacher teacher, ClassType classType,
                                MeetingMode meetingMode, DayOfWeek dayOfWeek, LocalTime startTime,
-                               LocalTime endTime, Room room, String onlineMeetingLink, Semester semester) {
+                               LocalTime endTime, Room room, String onlineMeetingLink, Semester semester, Field field) {
         this.group = group;
         this.subject = subject;
         this.teacher = teacher;
@@ -77,6 +81,7 @@ public class WeeklyScheduleEntry {
         this.room = room;
         this.onlineMeetingLink = onlineMeetingLink;
         this.semester = semester;
+        this.field = field;
     }
 
     public Long getId() { return id; }
@@ -103,4 +108,6 @@ public class WeeklyScheduleEntry {
     public void setOnlineMeetingLink(String onlineMeetingLink) { this.onlineMeetingLink = onlineMeetingLink; }
     public Semester getSemester() { return semester; }
     public void setSemester(Semester semester) { this.semester = semester; }
+    public Field getField() { return field; }
+    public void setField(Field field) { this.field = field; }
 }

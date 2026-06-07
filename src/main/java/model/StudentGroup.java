@@ -34,6 +34,10 @@ public class StudentGroup {
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     private Semester semester;
 
+    @NotNull
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    private Field field;
+
     @OneToMany(mappedBy = "group")
     private Set<Student> students = new HashSet<>();
 
@@ -88,6 +92,14 @@ public class StudentGroup {
 
     public void setSemester(Semester semester) {
         this.semester = semester;
+    }
+
+    public Field getField() {
+        return field;
+    }
+
+    public void setField(Field field) {
+        this.field = field;
     }
 
     public Set<Student> getStudents() {

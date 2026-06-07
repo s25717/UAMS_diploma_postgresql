@@ -78,6 +78,7 @@ public class Main {
             StudentGroup group = new StudentGroup("G3A");
             field.addSemester(semester);
             semester.addGroup(group);
+            group.setField(field);
 
             Student jan = new Student(
                     "Jan",
@@ -105,7 +106,6 @@ public class Main {
             );
 
             Subject databases = new Subject("Databases");
-            semester.addSubject(databases);
             databases.addGroup(group);
             teacher.addQualifiedSubject(databases);
 
@@ -149,13 +149,15 @@ public class Main {
             report.addLine(new ReportLine(anna, 1, 0, 1, 0, 0));
 
             em.persist(field);
+            em.persist(semester);
             em.persist(room);
             em.persist(jan);
             em.persist(anna);
             em.persist(teacher);
             em.persist(databases);
+            em.persist(semester.assignSubject(field, databases));
             em.persist(report);
-            EmailNotification emailNotification = new EmailNotification("Class room changed", 2, true);
+            EmailNotification emailNotification = new EmailNotification("Class room changed", 2, true, teacher.getPrimaryEmail());
             emailNotification.setRecipient(teacher);
             SystemNotification systemNotification = new SystemNotification("Attendance report generated", 3, 60);
             systemNotification.setRecipient(teacher);
@@ -198,6 +200,8 @@ public class Main {
                     notification,
                     room,
                     subject,
+                    semester_field_subject,
+                    semester_field,
                     student_group,
                     semester,
                     field_of_study,

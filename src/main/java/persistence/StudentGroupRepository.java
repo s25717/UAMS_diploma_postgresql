@@ -34,7 +34,7 @@ public class StudentGroupRepository extends GenericRepository<StudentGroup> {
                     left join fetch g.students s
                     left join fetch s.emails
                     join fetch g.semester sem
-                    join fetch sem.field
+                    join fetch g.field
                     order by g.code
                     """, StudentGroup.class)
                     .getResultList();
@@ -47,7 +47,7 @@ public class StudentGroupRepository extends GenericRepository<StudentGroup> {
                     select distinct g
                     from StudentGroup g
                     join fetch g.semester sem
-                    join fetch sem.field
+                    join fetch g.field
                     left join fetch g.students
                     where g.id = :id
                     """, StudentGroup.class)
@@ -64,7 +64,7 @@ public class StudentGroupRepository extends GenericRepository<StudentGroup> {
                     from StudentGroup g
                     join g.students owner
                     join fetch g.semester sem
-                    join fetch sem.field
+                    join fetch g.field
                     left join fetch g.students
                     where owner.id = :studentId
                     """, StudentGroup.class)
@@ -83,6 +83,20 @@ public class StudentGroupRepository extends GenericRepository<StudentGroup> {
                     where g.id = :groupId
                     """, Student.class)
                     .setParameter("groupId", groupId)
+                    .getResultList();
+        }
+    }
+
+    public List<StudentGroup> findAllWithAcademicContext() {
+        try (EntityManager em = emf.createEntityManager()) {
+            return em.createQuery("""
+                    select distinct g
+                    from StudentGroup g
+                    join fetch g.semester sem
+                    left join fetch sem.fields
+                    join fetch g.field
+                    order by g.code
+                    """, StudentGroup.class)
                     .getResultList();
         }
     }

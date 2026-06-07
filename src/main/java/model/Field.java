@@ -1,14 +1,13 @@
 package model;
 
-import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.ManyToMany;
 import jakarta.persistence.OneToMany;
 import jakarta.persistence.Table;
-import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 
 import java.util.HashSet;
@@ -25,9 +24,11 @@ public class Field {
     @Column(nullable = false, unique = true)
     private String name;
 
-    @Valid
-    @OneToMany(mappedBy = "field", cascade = CascadeType.ALL, orphanRemoval = true)
+    @ManyToMany(mappedBy = "fields")
     private Set<Semester> semesters = new HashSet<>();
+
+    @OneToMany(mappedBy = "field")
+    private Set<SemesterFieldSubject> curriculumAssignments = new HashSet<>();
 
     protected Field() {
     }
@@ -62,11 +63,19 @@ public class Field {
 
     public void addSemester(Semester semester) {
         semesters.add(semester);
-        semester.setField(this);
+        semester.getFields().add(this);
     }
 
     public void removeSemester(Semester semester) {
         semesters.remove(semester);
-        semester.setField(null);
+        semester.getFields().remove(this);
+    }
+
+    public Set<SemesterFieldSubject> getCurriculumAssignments() {
+        return curriculumAssignments;
+    }
+
+    public void setCurriculumAssignments(Set<SemesterFieldSubject> curriculumAssignments) {
+        this.curriculumAssignments = curriculumAssignments;
     }
 }

@@ -2,6 +2,7 @@ package persistence;
 
 import jakarta.persistence.EntityManager;
 import model.Room;
+import model.Field;
 import model.Semester;
 import model.StudentGroup;
 import model.Subject;
@@ -22,6 +23,7 @@ public class WeeklyScheduleEntryRepository extends GenericRepository<WeeklySched
                     from WeeklyScheduleEntry e
                     join fetch e.group g
                     join fetch e.semester sem
+                    join fetch e.field
                     join fetch e.subject s
                     join fetch e.teacher t
                     left join fetch t.emails
@@ -46,7 +48,8 @@ public class WeeklyScheduleEntryRepository extends GenericRepository<WeeklySched
                     entry.getEndTime(),
                     entry.getRoom() == null ? null : em.getReference(Room.class, entry.getRoom().getId()),
                     entry.getOnlineMeetingLink(),
-                    em.getReference(Semester.class, entry.getSemester().getId())
+                    em.getReference(Semester.class, entry.getSemester().getId()),
+                    em.getReference(Field.class, entry.getField().getId())
             );
             validateBusinessRules(em, entry);
             em.persist(managed);
@@ -60,25 +63,28 @@ public class WeeklyScheduleEntryRepository extends GenericRepository<WeeklySched
                 from StudentGroup g
                 where g.id = :groupId
                 and g.semester.id = :semesterId
+                and g.field.id = :fieldId
                 """, Long.class)
                 .setParameter("groupId", entry.getGroup().getId())
                 .setParameter("semesterId", entry.getSemester().getId())
+                .setParameter("fieldId", entry.getField().getId())
                 .getSingleResult();
         if (groupSemesterMatches == 0) {
-            throw new IllegalArgumentException("Weekly schedule semester must match the selected group semester.");
+            throw new IllegalArgumentException("Weekly schedule semester and field must match the selected group.");
         }
         Long semesterSubjectMatches = em.createQuery("""
-                select count(sem)
-                from Semester sem
-                join sem.subjects subject
-                where sem.id = :semesterId
-                and subject.id = :subjectId
+                select count(c)
+                from SemesterFieldSubject c
+                where c.semester.id = :semesterId
+                and c.field.id = :fieldId
+                and c.subject.id = :subjectId
                 """, Long.class)
                 .setParameter("semesterId", entry.getSemester().getId())
+                .setParameter("fieldId", entry.getField().getId())
                 .setParameter("subjectId", entry.getSubject().getId())
                 .getSingleResult();
         if (semesterSubjectMatches == 0) {
-            throw new IllegalArgumentException("Subject is not available in the selected semester.");
+            throw new IllegalArgumentException("Subject is not available in the selected semester and field.");
         }
         Long groupSubjectMatches = em.createQuery("""
                 select count(g)
@@ -113,6 +119,7 @@ public class WeeklyScheduleEntryRepository extends GenericRepository<WeeklySched
                     from WeeklyScheduleEntry e
                     join fetch e.group
                     join fetch e.semester
+                    join fetch e.field
                     join fetch e.subject
                     join fetch e.teacher t
                     left join fetch e.room
@@ -131,6 +138,7 @@ public class WeeklyScheduleEntryRepository extends GenericRepository<WeeklySched
                     from WeeklyScheduleEntry e
                     join fetch e.group g
                     join fetch e.semester
+                    join fetch e.field
                     join fetch e.subject
                     join fetch e.teacher t
                     left join fetch t.emails

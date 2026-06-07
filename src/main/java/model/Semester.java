@@ -10,12 +10,11 @@ import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.JoinTable;
 import jakarta.persistence.ManyToMany;
-import jakarta.persistence.ManyToOne;
 import jakarta.persistence.OneToMany;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
-import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
 
 import java.util.HashSet;
 import java.time.LocalDate;
@@ -36,9 +35,14 @@ public class Semester {
 
     private LocalDate endDate;
 
-    @NotNull
-    @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    private Field field;
+    @Size(min = 1)
+    @ManyToMany(fetch = FetchType.LAZY)
+    @JoinTable(
+            name = "semester_field",
+            joinColumns = @JoinColumn(name = "semester_id"),
+            inverseJoinColumns = @JoinColumn(name = "field_id")
+    )
+    private Set<Field> fields = new HashSet<>();
 
     @Valid
     @OneToMany(mappedBy = "semester", cascade = CascadeType.ALL, orphanRemoval = true)
@@ -47,13 +51,8 @@ public class Semester {
     @OneToMany(mappedBy = "semester", cascade = CascadeType.ALL, orphanRemoval = true)
     private Set<WeeklyScheduleEntry> weeklyScheduleEntries = new HashSet<>();
 
-    @ManyToMany
-    @JoinTable(
-            name = "semester_subject",
-            joinColumns = @JoinColumn(name = "semester_id"),
-            inverseJoinColumns = @JoinColumn(name = "subject_id")
-    )
-    private Set<Subject> subjects = new HashSet<>();
+    @OneToMany(mappedBy = "semester", cascade = CascadeType.ALL, orphanRemoval = true)
+    private Set<SemesterFieldSubject> curriculumAssignments = new HashSet<>();
 
     protected Semester() {
     }
@@ -80,12 +79,12 @@ public class Semester {
         this.number = number;
     }
 
-    public Field getField() {
-        return field;
+    public Set<Field> getFields() {
+        return fields;
     }
 
-    public void setField(Field field) {
-        this.field = field;
+    public void setFields(Set<Field> fields) {
+        this.fields = fields;
     }
 
     public Set<StudentGroup> getGroups() {
@@ -120,12 +119,12 @@ public class Semester {
         this.weeklyScheduleEntries = weeklyScheduleEntries;
     }
 
-    public Set<Subject> getSubjects() {
-        return subjects;
+    public Set<SemesterFieldSubject> getCurriculumAssignments() {
+        return curriculumAssignments;
     }
 
-    public void setSubjects(Set<Subject> subjects) {
-        this.subjects = subjects;
+    public void setCurriculumAssignments(Set<SemesterFieldSubject> curriculumAssignments) {
+        this.curriculumAssignments = curriculumAssignments;
     }
 
     public void addGroup(StudentGroup group) {
@@ -138,13 +137,42 @@ public class Semester {
         group.setSemester(null);
     }
 
-    public void addSubject(Subject subject) {
-        subjects.add(subject);
-        subject.getSemesters().add(this);
+    public void addField(Field field) {
+        fields.add(field);
+        field.getSemesters().add(this);
     }
 
-    public void removeSubject(Subject subject) {
-        subjects.remove(subject);
-        subject.getSemesters().remove(this);
+    public void removeField(Field field) {
+        fields.remove(field);
+        field.getSemesters().remove(this);
+    }
+
+    public SemesterFieldSubject assignSubject(Field field, Subject subject) {
+        if (!fields.contains(field)) {
+            throw new IllegalArgumentException("Field must belong to the semester before assigning its subjects.");
+        }
+        return curriculumAssignments.stream()
+                .filter(assignment -> assignment.getField().equals(field)
+                        && assignment.getSubject().equals(subject))
+                .findFirst()
+                .orElseGet(() -> {
+                    SemesterFieldSubject assignment = new SemesterFieldSubject(this, field, subject);
+                    curriculumAssignments.add(assignment);
+                    field.getCurriculumAssignments().add(assignment);
+                    subject.getCurriculumAssignments().add(assignment);
+                    return assignment;
+                });
+    }
+
+    public void removeSubject(Field field, Subject subject) {
+        curriculumAssignments.removeIf(assignment -> {
+            boolean matches = assignment.getField().equals(field)
+                    && assignment.getSubject().equals(subject);
+            if (matches) {
+                field.getCurriculumAssignments().remove(assignment);
+                subject.getCurriculumAssignments().remove(assignment);
+            }
+            return matches;
+        });
     }
 }

@@ -26,6 +26,7 @@ public class ScheduleGenerationService {
                     from WeeklyScheduleEntry e
                     join fetch e.group
                     join fetch e.semester
+                    join fetch e.field
                     join fetch e.subject
                     join fetch e.teacher t
                     left join fetch t.qualifiedSubjects
@@ -37,21 +38,23 @@ public class ScheduleGenerationService {
             if (!managedEntry.getTeacher().isQualifiedFor(managedEntry.getSubject())) {
                 throw new IllegalArgumentException("Teacher is not qualified to teach this subject.");
             }
-            if (!managedEntry.getGroup().getSemester().getId().equals(managedEntry.getSemester().getId())) {
-                throw new IllegalArgumentException("Weekly schedule semester must match the selected group semester.");
+            if (!managedEntry.getGroup().getSemester().getId().equals(managedEntry.getSemester().getId())
+                    || !managedEntry.getGroup().getField().getId().equals(managedEntry.getField().getId())) {
+                throw new IllegalArgumentException("Weekly schedule semester and field must match the selected group.");
             }
             Long semesterSubjectMatches = em.createQuery("""
-                    select count(sem)
-                    from Semester sem
-                    join sem.subjects subject
-                    where sem.id = :semesterId
-                    and subject.id = :subjectId
+                    select count(c)
+                    from SemesterFieldSubject c
+                    where c.semester.id = :semesterId
+                    and c.field.id = :fieldId
+                    and c.subject.id = :subjectId
                     """, Long.class)
                     .setParameter("semesterId", managedEntry.getSemester().getId())
+                    .setParameter("fieldId", managedEntry.getField().getId())
                     .setParameter("subjectId", managedEntry.getSubject().getId())
                     .getSingleResult();
             if (semesterSubjectMatches == 0) {
-                throw new IllegalArgumentException("Subject is not available in the selected semester.");
+                throw new IllegalArgumentException("Subject is not available in the selected semester and field.");
             }
             if (managedEntry.getMeetingMode() == MeetingMode.CLASSROOM && managedEntry.getRoom() != null) {
                 Long groupSize = em.createQuery("select count(s) from Student s where s.group.id = :groupId", Long.class)

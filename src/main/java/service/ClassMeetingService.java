@@ -93,8 +93,8 @@ public class ClassMeetingService {
         if (!meeting.getTeacher().getId().equals(teacherId)) {
             throw new IllegalArgumentException("You are not assigned to this class meeting.");
         }
-        if (!meeting.isScheduled()) {
-            throw new IllegalArgumentException("Attendance can only be marked for a scheduled class meeting.");
+        if (!meeting.isScheduled() && !meeting.isCompleted()) {
+            throw new IllegalArgumentException("Attendance can only be marked for scheduled or completed class meetings.");
         }
         LocalDateTime meetingStart = LocalDateTime.of(
                 meeting.getMeetingDate(),
@@ -223,18 +223,18 @@ public class ClassMeetingService {
 
     private void validateSubjectAvailableForGroup(EntityManager em, Long subjectId, Long groupId) {
         Long semesterMatches = em.createQuery("""
-                select count(g)
-                from StudentGroup g
-                join g.semester sem
-                join sem.subjects subject
+                select count(c)
+                from StudentGroup g, SemesterFieldSubject c
                 where g.id = :groupId
-                and subject.id = :subjectId
+                and c.semester = g.semester
+                and c.field = g.field
+                and c.subject.id = :subjectId
                 """, Long.class)
                 .setParameter("groupId", groupId)
                 .setParameter("subjectId", subjectId)
                 .getSingleResult();
         if (semesterMatches == 0) {
-            throw new IllegalArgumentException("Subject is not available in the group's semester.");
+            throw new IllegalArgumentException("Subject is not available in the group's semester and field.");
         }
         Long groupMatches = em.createQuery("""
                 select count(g)
