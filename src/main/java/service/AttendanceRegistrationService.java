@@ -55,8 +55,9 @@ public class AttendanceRegistrationService {
                     """, ClassMeeting.class)
                     .setParameter("id", classMeetingId)
                     .getSingleResult();
-            if (meeting.getStatus() != ClassMeetingStatus.SCHEDULED) {
-                throw new IllegalArgumentException("Attendance can only be registered for scheduled class meetings.");
+            boolean firstRegistration = meeting.getStatus() == ClassMeetingStatus.SCHEDULED;
+            if (!firstRegistration && meeting.getStatus() != ClassMeetingStatus.COMPLETED) {
+                throw new IllegalArgumentException("Attendance can only be registered for scheduled or completed class meetings.");
             }
             LocalDateTime registrationTime = LocalDateTime.now();
             LocalDateTime meetingStart = LocalDateTime.of(meeting.getMeetingDate(), meeting.getTime().getStartTime());
@@ -100,7 +101,9 @@ public class AttendanceRegistrationService {
                     validate(attendance);
                 }
             }
-            meeting.complete();
+            if (firstRegistration) {
+                meeting.complete();
+            }
 
             tx.commit();
         } catch (RuntimeException ex) {
