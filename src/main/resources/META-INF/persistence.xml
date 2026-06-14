@@ -30,9 +30,9 @@
 
         <properties>
             <property name="jakarta.persistence.jdbc.driver" value="org.postgresql.Driver"/>
-            <property name="jakarta.persistence.jdbc.url" value="jdbc:postgresql://localhost:5432/mas_university"/>
-            <property name="jakarta.persistence.jdbc.user" value="mas_user"/>
-            <property name="jakarta.persistence.jdbc.password" value="mas_password"/>
+            <property name="jakarta.persistence.jdbc.url" value="jdbc:postgresql://localhost:5434/UAMS"/>
+            <property name="jakarta.persistence.jdbc.user" value="demo_user"/>
+            <property name="jakarta.persistence.jdbc.password" value="demo_password"/>
 
             <property name="hibernate.dialect" value="org.hibernate.dialect.PostgreSQLDialect"/>
             <property name="hibernate.hbm2ddl.auto" value="validate"/>

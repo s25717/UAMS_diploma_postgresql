@@ -4,9 +4,9 @@ import java.util.HashMap;
 import java.util.Map;
 
 public final class DatabaseConfig {
-    private static final String DEFAULT_URL = "jdbc:postgresql://localhost:5432/mas_university";
-    private static final String DEFAULT_USER = "mas_user";
-    private static final String DEFAULT_PASSWORD = "mas_password";
+    private static final String DEFAULT_URL = "jdbc:postgresql://localhost:5434/UAMS";
+    private static final String DEFAULT_USER = "demo_user";
+    private static final String DEFAULT_PASSWORD = "demo_password";
 
     private DatabaseConfig() {
     }

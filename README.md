@@ -27,7 +27,7 @@ Create a PostgreSQL database and user. Example for local PostgreSQL on port `543
 
 ```sql
 CREATE DATABASE "UAMS";
-CREATE USER demo_user WITH PASSWORD 'your_password';
+CREATE USER demo_user WITH PASSWORD 'demo_password';
 GRANT ALL PRIVILEGES ON DATABASE "UAMS" TO demo_user;
 ```
 
@@ -36,10 +36,10 @@ Set environment variables before running the app:
 ```powershell
 $env:MAS_DB_URL = "jdbc:postgresql://localhost:5434/UAMS"
 $env:MAS_DB_USER = "demo_user"
-$env:MAS_DB_PASSWORD = "your_password"
+$env:MAS_DB_PASSWORD = "demo_password"
 ```
 
-Flyway applies all migrations automatically on startup.
+Flyway applies all migrations automatically on startup. These are also the default connection settings in the app, so a normal local setup can run without extra environment variables.
 
 ## Run The Project
 
