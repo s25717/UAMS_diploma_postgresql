@@ -67,6 +67,9 @@ DROP TABLE semester_subject;
 ALTER TABLE semester
     DROP COLUMN field_id;
 
+-- PostgreSQL cannot create indexes on tables with pending deferred FK trigger events.
+SET CONSTRAINTS ALL IMMEDIATE;
+
 CREATE INDEX idx_semester_field_field_id
     ON semester_field (field_id, semester_id);
 CREATE INDEX idx_student_group_field_semester
