@@ -19,6 +19,6 @@ public final class JpaUtil {
 
     private static EntityManagerFactory createEntityManagerFactory() {
         DatabaseMigrator.migrate();
-        return Persistence.createEntityManagerFactory("mas-pu", DatabaseConfig.jpaProperties());
+        return Persistence.createEntityManagerFactory("uams-pu", DatabaseConfig.jpaProperties());
     }
 }

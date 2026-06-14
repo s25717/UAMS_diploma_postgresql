@@ -12,15 +12,15 @@ public final class DatabaseConfig {
     }
 
     public static String jdbcUrl() {
-        return read("MAS_DB_URL", DEFAULT_URL);
+        return read("UAMS_DB_URL", DEFAULT_URL);
     }
 
     public static String username() {
-        return read("MAS_DB_USER", DEFAULT_USER);
+        return read("UAMS_DB_USER", DEFAULT_USER);
     }
 
     public static String password() {
-        return read("MAS_DB_PASSWORD", DEFAULT_PASSWORD);
+        return read("UAMS_DB_PASSWORD", DEFAULT_PASSWORD);
     }
 
     public static Map<String, Object> jpaProperties() {

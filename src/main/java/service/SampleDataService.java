@@ -82,16 +82,16 @@ public class SampleDataService {
             Administrator admin = new Administrator("Admin", "User", new BirthDate(LocalDate.of(1978, 1, 20)), Set.of("admin@pja.edu.pl"), "a100");
             admin.setPasswordHash(passwordService.hash("admin"));
 
-            Subject mas = new Subject("MAS");
-            mas.addGroup(group);
-            teacher.addQualifiedSubject(mas);
+            Subject databaseSystems = new Subject("Database Systems");
+            databaseSystems.addGroup(group);
+            teacher.addQualifiedSubject(databaseSystems);
 
             Room laboratoryRoom = new Room("201", 28);
             Room lectureRoom = new Room("Auditorium A", 120);
 
             WeeklyScheduleEntry scheduleEntry = new WeeklyScheduleEntry(
                     group,
-                    mas,
+                    databaseSystems,
                     teacher,
                     ClassType.TUTORIAL,
                     MeetingMode.CLASSROOM,
@@ -111,29 +111,29 @@ public class SampleDataService {
                     new MeetingTime(DayOfWeek.TUESDAY, LocalTime.of(10, 0), LocalTime.of(11, 30)),
                     ClassType.TUTORIAL,
                     MeetingMode.CLASSROOM,
-                    mas,
+                    databaseSystems,
                     teacher,
                     group
             );
             currentTutorial.setScheduleEntry(scheduleEntry);
-            currentTutorial.setComment("Current-week MAS tutorial for public schedule demo.");
-            mas.getClassMeetings().add(currentTutorial);
+            currentTutorial.setComment("Current-week database systems tutorial for public schedule demo.");
+            databaseSystems.getClassMeetings().add(currentTutorial);
             teacher.getClassMeetings().add(currentTutorial);
             group.getClassMeetings().add(currentTutorial);
 
             ClassMeeting futureLecture = new ClassMeeting(
                     today.plusWeeks(1),
                     null,
-                    "https://meet.example.edu/mas-lecture",
+                    "https://meet.example.edu/database-systems-lecture",
                     new MeetingTime(today.plusWeeks(1).getDayOfWeek(), LocalTime.of(12, 0), LocalTime.of(13, 30)),
                     ClassType.LECTURE,
                     MeetingMode.ONLINE,
-                    mas,
+                    databaseSystems,
                     teacher,
                     group
             );
             futureLecture.setComment("Future online lecture. Teacher attendance marking should be blocked before start.");
-            mas.getClassMeetings().add(futureLecture);
+            databaseSystems.getClassMeetings().add(futureLecture);
             teacher.getClassMeetings().add(futureLecture);
             group.getClassMeetings().add(futureLecture);
 
@@ -144,12 +144,12 @@ public class SampleDataService {
                     new MeetingTime(today.minusWeeks(1).getDayOfWeek(), LocalTime.of(8, 0), LocalTime.of(9, 30)),
                     ClassType.LABORATORY,
                     MeetingMode.CLASSROOM,
-                    mas,
+                    databaseSystems,
                     teacher,
                     group
             );
             pastLaboratory.setComment("Completed laboratory with existing attendance.");
-            mas.getClassMeetings().add(pastLaboratory);
+            databaseSystems.getClassMeetings().add(pastLaboratory);
             teacher.getClassMeetings().add(pastLaboratory);
             group.getClassMeetings().add(pastLaboratory);
 
@@ -182,7 +182,7 @@ public class SampleDataService {
 
             AttendanceReport report = new AttendanceReport(LocalDate.now(), ReportType.COMBINED);
             report.setGroup(group);
-            report.setSubject(mas);
+            report.setSubject(databaseSystems);
             report.setTeacher(teacher);
             report.getSemesters().add(semester);
             report.addLine(new ReportLine(anna, 1, 1, 0, 0, 0));
@@ -196,16 +196,16 @@ public class SampleDataService {
             em.persist(adam);
             em.persist(teacher);
             em.persist(admin);
-            em.persist(mas);
-            em.persist(semester.assignSubject(field, mas));
+            em.persist(databaseSystems);
+            em.persist(semester.assignSubject(field, databaseSystems));
             em.persist(laboratoryRoom);
             em.persist(lectureRoom);
             em.persist(scheduleEntry);
             em.persist(report);
-            EmailNotification studentNotification = new EmailNotification("Attendance was updated for MAS laboratory", 2, true, anna.getPrimaryEmail());
+            EmailNotification studentNotification = new EmailNotification("Attendance was updated for database systems laboratory", 2, true, anna.getPrimaryEmail());
             studentNotification.setRecipient(anna);
             studentNotification.setStatus(NotificationStatus.SENT);
-            SystemNotification teacherNotification = new SystemNotification("Current-week MAS tutorial is scheduled in room 201", 2, 45);
+            SystemNotification teacherNotification = new SystemNotification("Current-week database systems tutorial is scheduled in room 201", 2, 45);
             teacherNotification.setRecipient(teacher);
             SystemNotification adminNotification = new SystemNotification("Attendance report generated", 3, 60);
             adminNotification.setRecipient(admin);
