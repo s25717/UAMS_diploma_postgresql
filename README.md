@@ -1,75 +1,104 @@
-# MP4 MAS Fixed Version
+# University Academic Management System
 
-This folder now contains a clean Maven/JPA implementation in the standard layout:
+Diploma-ready JavaFX university management system using PostgreSQL, Flyway migrations, Hibernate/JPA, Bean Validation, and database-level business rules.
 
-- `pom.xml`
-- `src/main/java`
-- `src/main/resources/META-INF/persistence.xml`
+## What Is Included
 
-The old extracted source remains in `MP4_MAS_S25717/src` only as reference material. Maven ignores it because it is outside the standard `src/main` tree.
+- Java 17 Maven project with JavaFX GUI.
+- PostgreSQL-only persistence, configured through environment variables.
+- Flyway migrations `V1` through `V7`.
+- Explicit PostgreSQL DDL, constraints, indexes, triggers, and proof scripts.
+- JPA inheritance examples:
+  - `Person -> Student / Teacher / Administrator` with `JOINED`.
+  - `Notification -> EmailNotification / SystemNotification` with `SINGLE_TABLE`.
+- Rendered diagram images in the repository root.
+- Business rule evidence in `BUSINESS_RULES_MATRIX.md`.
 
-Covered MP4 requirements:
+## Requirements
 
-- JPA entities with generated primary keys.
-- Repository classes with `findAll`, `findById`, `save`, `update`, and `delete`.
-- Bean Validation annotations: `@NotBlank`, `@Size`, `@Email`, `@Pattern`, `@Min`, `@Max`, `@Past`.
-- Multi-value attribute: `Person.emails` via `@ElementCollection`, with global uniqueness enforced by a database unique constraint and `PersonService`.
-- Complex attributes: `BirthDate`, `MeetingTime`, and `MeetingSlot` via `@Embeddable` / `@Embedded`.
-- Enum attributes: `AttendanceStatus`, `ClassType`, `MeetingMode`, `ClassMeetingStatus`, `ReportType`, `BookingStatus`, `NotificationStatus`, and notification task enums.
-- Associations with `mappedBy`: group-student, teacher-meeting, meeting-attendance, etc.
-- Many-to-many association: `Subject` and `StudentGroup`.
-- Many-to-many qualification association: `Teacher.qualifiedSubjects` and `Subject.qualifiedTeachers`.
-- Repository fetch examples using entity graph and JPQL `join fetch`.
-- Association with attribute: `Attendance` between `Student` and `ClassMeeting`.
-- Composition: `AttendanceReport` owns detailed `ReportLine` statistics with `orphanRemoval = true`.
-- Qualified association: `Room [MeetingSlot] -> RoomBooking`, with one booking per room and exact slot.
-- Flexible administrator reports with optional filters and CSV export.
-- Report conclusion messages with overall attendance performance percentage.
-- Main JavaFX page with a public weekly schedule and class meeting details dialog.
-- Class meeting comments and per-student attendance comments.
-- Login/password support through `AuthenticationService`, `passwordHash`, and personal settings email/notification services.
-- Scheduled notification tasks processed by `SystemScheduler`.
-- Fixed weekly schedules through `WeeklyScheduleEntry` and generated concrete `ClassMeeting` occurrences.
-- Two inheritance mappings:
-  - `Person` / `Student` / `Teacher` / `Administrator`: `JOINED`.
-  - `Notification` / `EmailNotification` / `SystemNotification`: `SINGLE_TABLE`.
+- JDK 17 or newer.
+- PostgreSQL 16 recommended.
+- JavaFX is downloaded by Maven.
+- Maven is optional because the project includes `mvnw.cmd`.
 
-Main actors used by the implementation and documentation:
+## Database Setup
 
-- `Student`
-- `Teacher`
-- `Administrator`
-- `SystemScheduler`
+Create a PostgreSQL database and user. Example for local PostgreSQL on port `5434`:
 
-## Build and run
-
-Run the console smoke demo with:
-
-```powershell
-mvn clean compile exec:java
+```sql
+CREATE DATABASE "UAMS";
+CREATE USER demo_user WITH PASSWORD 'your_password';
+GRANT ALL PRIVILEGES ON DATABASE "UAMS" TO demo_user;
 ```
 
-Run the JavaFX GUI with the standard JavaFX Maven plugin goal:
+Set environment variables before running the app:
 
 ```powershell
-mvn clean javafx:run
+$env:MAS_DB_URL = "jdbc:postgresql://localhost:5434/UAMS"
+$env:MAS_DB_USER = "demo_user"
+$env:MAS_DB_PASSWORD = "your_password"
 ```
 
-If global Maven is not installed, use the included wrapper:
+Flyway applies all migrations automatically on startup.
+
+## Run The Project
+
+Compile and package:
+
+```powershell
+.\mvnw.cmd -q -DskipTests package
+```
+
+Run the JavaFX application:
 
 ```powershell
 .\mvnw.cmd javafx:run
 ```
 
-The Maven wrapper is included, so Maven does not need to be installed globally. In this environment, global `mvn` was not available, so verification used `.\mvnw.cmd`.
+There is also a helper script:
 
-Note: `mvn clean javafx` is not a standard Maven lifecycle phase. Use `mvn clean javafx:run`.
+```powershell
+.\tools\run-gui-postgres16.ps1
+```
 
-## Troubleshooting
+## Proof Scripts
 
-- If Hibernate reports schema or column errors after model changes, delete old local database files such as `mp4_mas_db.mv.db` and run again.
-- Use JDK 21 or a project-compatible JDK. The project compiles with `maven.compiler.release=17`.
-- In IntelliJ IDEA, reload the Maven project after changing `pom.xml`.
-- If JavaFX does not start from IntelliJ, run `mvn clean javafx:run` in the terminal or set `app.AttendanceGuiApp` as the JavaFX entry point.
+After the app has migrated the database, proof scripts can be run with `psql`:
 
-The project recreates the local H2 schema on startup with `hibernate.hbm2ddl.auto=create`. This avoids stale schema errors after the final model update and keeps the defence/demo database deterministic.
+```powershell
+psql -h localhost -p 5434 -U demo_user -d UAMS -f sql/postgresql_business_rule_proofs.sql
+psql -h localhost -p 5434 -U demo_user -d UAMS -f sql/postgresql_performance_proofs.sql
+```
+
+## Demo Accounts
+
+The sample data service creates demo accounts when the database is empty:
+
+- Student: `anna.nowak@student.pja.edu.pl` / `student`
+- Teacher: `piotr.kowalski@pja.edu.pl` / `teacher`
+- Admin: `admin@pja.edu.pl` / `admin`
+
+## Current Status
+
+Implemented:
+
+- PostgreSQL migration from H2-style setup.
+- Explicit DDL with Flyway.
+- Core domain entities, inheritance, associations, and validation.
+- Real database constraints, triggers, indexes, and proof scripts.
+- Semester-field many-to-many model.
+- Exact semester-field-subject curriculum association.
+- Group and weekly schedule academic context enforcement.
+- Room booking overlap prevention.
+- Attendance registration and correction flow.
+- Admin notification targeting by selected user emails, group, or all users.
+- Admin/user email management.
+- JavaFX screens for users, academic structure, schedules, reports, rooms, notifications, and histories.
+
+Not finished yet:
+
+- Full automated test suite.
+- CI pipeline on GitHub.
+- Production-grade packaging/installer.
+- Regenerated PNG images for every recently edited PlantUML diagram.
+- Final thesis text polish outside this repository.
