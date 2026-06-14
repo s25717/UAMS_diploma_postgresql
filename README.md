@@ -12,6 +12,7 @@ Diploma-ready JavaFX university management system using PostgreSQL, Flyway migra
   - `Person -> Student / Teacher / Administrator` with `JOINED`.
   - `Notification -> EmailNotification / SystemNotification` with `SINGLE_TABLE`.
 - Rendered diagram images in the repository root.
+- Diploma documentation and ADRs in `docs/`.
 - Business rule evidence in `BUSINESS_RULES_MATRIX.md`.
 
 ## Requirements
