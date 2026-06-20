@@ -10,9 +10,11 @@ import persistence.NotificationRepository;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 
 public class NotificationManagementService extends EntityService<Notification> {
     private final NotificationRepository notificationRepository = new NotificationRepository();
@@ -41,6 +43,34 @@ public class NotificationManagementService extends EntityService<Notification> {
             notification.setRecipient(em.getReference(Person.class, recipientId));
             em.persist(notification);
             return notification;
+        });
+    }
+
+    public List<SystemNotification> createSystemNotifications(List<Long> recipientIds, String title,
+                                                              String message, NotificationStatus status) {
+        if (recipientIds == null || recipientIds.isEmpty() || title == null || title.isBlank()
+                || message == null || message.isBlank()) {
+            throw new IllegalArgumentException("At least one recipient, title, and message are required.");
+        }
+        Set<Long> uniqueRecipientIds = new LinkedHashSet<>();
+        for (Long recipientId : recipientIds) {
+            if (recipientId == null) {
+                throw new IllegalArgumentException("Each selected target must have a user.");
+            }
+            uniqueRecipientIds.add(recipientId);
+        }
+
+        return transactionManager.execute(em -> {
+            List<SystemNotification> created = new ArrayList<>();
+            for (Long recipientId : uniqueRecipientIds) {
+                SystemNotification notification = new SystemNotification(message.trim(), 1, 60);
+                notification.setTitle(title.trim());
+                notification.setStatus(status == null ? NotificationStatus.PENDING : status);
+                notification.setRecipient(em.getReference(Person.class, recipientId));
+                em.persist(notification);
+                created.add(notification);
+            }
+            return created;
         });
     }
 

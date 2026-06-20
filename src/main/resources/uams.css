@@ -1,0 +1,168 @@
+.root {
+    -fx-font-family: "Segoe UI", "Inter", "Arial", sans-serif;
+    -fx-font-size: 13px;
+    -fx-background-color: #f6f8fb;
+    -fx-text-fill: #172033;
+}
+
+.app-shell {
+    -fx-background-color: #f6f8fb;
+}
+
+.app-header {
+    -fx-background-color: #ffffff;
+    -fx-border-color: #dfe5ee;
+    -fx-border-width: 0 0 1 0;
+    -fx-alignment: center-left;
+}
+
+.navigation {
+    -fx-background-color: #ffffff;
+    -fx-border-color: #dfe5ee;
+    -fx-border-width: 0 1 0 0;
+}
+
+.navigation .button {
+    -fx-alignment: center-left;
+}
+
+.login-panel {
+    -fx-background-color: #ffffff;
+}
+
+.page-title {
+    -fx-font-size: 18px;
+    -fx-font-weight: 700;
+    -fx-text-fill: #0f172a;
+}
+
+.section-title {
+    -fx-font-size: 18px;
+    -fx-font-weight: 700;
+    -fx-text-fill: #0f172a;
+}
+
+.user-label,
+.muted-label {
+    -fx-text-fill: #64748b;
+}
+
+.button {
+    -fx-background-color: #ffffff;
+    -fx-border-color: #cfd8e6;
+    -fx-border-radius: 8;
+    -fx-background-radius: 8;
+    -fx-padding: 7 12;
+    -fx-text-fill: #172033;
+}
+
+.button:hover {
+    -fx-background-color: #eef4ff;
+    -fx-border-color: #93b4ff;
+}
+
+.button:pressed {
+    -fx-background-color: #dce9ff;
+}
+
+.text-field,
+.password-field,
+.text-area,
+.combo-box,
+.date-picker {
+    -fx-background-color: #ffffff;
+    -fx-border-color: #cfd8e6;
+    -fx-border-radius: 8;
+    -fx-background-radius: 8;
+}
+
+.table-view,
+.list-view {
+    -fx-background-color: #ffffff;
+    -fx-border-color: #dfe5ee;
+    -fx-border-radius: 10;
+    -fx-background-radius: 10;
+}
+
+.table-view .column-header-background,
+.table-view .column-header {
+    -fx-background-color: #f1f5f9;
+}
+
+.page-toolbar {
+    -fx-padding: 16 18 12 18;
+    -fx-background-color: #f6f8fb;
+}
+
+.schedule-scroll {
+    -fx-background: #f6f8fb;
+    -fx-background-color: #f6f8fb;
+    -fx-padding: 0 14 14 14;
+}
+
+.schedule-scroll > .viewport {
+    -fx-background-color: #f6f8fb;
+}
+
+.schedule-grid {
+    -fx-background-color: #ffffff;
+    -fx-border-color: #dfe5ee;
+    -fx-border-radius: 12;
+    -fx-background-radius: 12;
+}
+
+.schedule-header {
+    -fx-background-color: #f1f5f9;
+    -fx-border-color: #dfe5ee;
+    -fx-border-width: 0 1 1 0;
+    -fx-font-weight: 700;
+    -fx-text-fill: #334155;
+    -fx-padding: 8;
+}
+
+.schedule-time {
+    -fx-background-color: #f8fafc;
+    -fx-border-color: #edf1f7;
+    -fx-border-width: 0 1 1 0;
+    -fx-text-fill: #64748b;
+    -fx-padding: 5 4 0 4;
+}
+
+.schedule-cell-hour {
+    -fx-background-color: #ffffff;
+    -fx-border-color: #edf1f7;
+    -fx-border-width: 0 1 1 0;
+}
+
+.schedule-cell-half {
+    -fx-background-color: #fbfcff;
+    -fx-border-color: #f1f4f8;
+    -fx-border-width: 0 1 1 0;
+}
+
+.schedule-card {
+    -fx-background-color: #eaf3ff;
+    -fx-border-color: #7eb0ff;
+    -fx-border-radius: 8;
+    -fx-background-radius: 8;
+    -fx-padding: 7;
+    -fx-cursor: hand;
+}
+
+.schedule-card:hover {
+    -fx-background-color: #dcecff;
+    -fx-border-color: #4f8df5;
+}
+
+.schedule-card-subject {
+    -fx-font-weight: 700;
+    -fx-text-fill: #12315f;
+}
+
+.schedule-card-meta {
+    -fx-text-fill: #31557e;
+}
+
+.schedule-card-room {
+    -fx-text-fill: #64748b;
+}

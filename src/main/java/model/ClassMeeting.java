@@ -109,7 +109,6 @@ public class ClassMeeting {
         this.subject = subject;
         this.teacher = teacher;
         this.group = group;
-        validateTeacherQualification();
     }
 
     public Long getId() {
@@ -250,7 +249,6 @@ public class ClassMeeting {
 
     public void setSubject(Subject subject) {
         this.subject = subject;
-        validateTeacherQualification();
     }
 
     public Teacher getTeacher() {
@@ -259,7 +257,6 @@ public class ClassMeeting {
 
     public void setTeacher(Teacher teacher) {
         this.teacher = teacher;
-        validateTeacherQualification();
     }
 
     public StudentGroup getGroup() {
@@ -307,9 +304,4 @@ public class ClassMeeting {
         attendance.setClassMeeting(null);
     }
 
-    private void validateTeacherQualification() {
-        if (teacher != null && subject != null && !teacher.isQualifiedFor(subject)) {
-            throw new IllegalArgumentException("Teacher is not qualified to teach this subject.");
-        }
-    }
 }

@@ -4,6 +4,7 @@ import javafx.application.Application;
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
 import javafx.geometry.Insets;
+import javafx.geometry.Pos;
 import javafx.scene.Node;
 import javafx.scene.Scene;
 import javafx.scene.control.Button;
@@ -27,9 +28,12 @@ import javafx.scene.control.TextField;
 import javafx.scene.control.cell.ComboBoxTableCell;
 import javafx.scene.control.cell.TextFieldTableCell;
 import javafx.scene.layout.BorderPane;
+import javafx.scene.layout.ColumnConstraints;
 import javafx.scene.layout.GridPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
+import javafx.scene.layout.RowConstraints;
+import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 import javafx.stage.FileChooser;
 import javafx.stage.Stage;
@@ -51,6 +55,7 @@ import model.Semester;
 import model.Student;
 import model.StudentGroup;
 import model.Subject;
+import model.SystemNotification;
 import model.Teacher;
 import model.WeeklyScheduleEntry;
 import model.enums.BookingStatus;
@@ -90,6 +95,7 @@ import service.RoomService;
 import service.SampleDataService;
 import service.ScheduleAccessService;
 import service.ScheduleGenerationService;
+import util.ExceptionMessages;
 
 import java.nio.file.Path;
 import java.time.DayOfWeek;
@@ -106,6 +112,19 @@ import java.util.Map;
 import java.util.Set;
 
 public class AttendanceGuiApp extends Application {
+    private static final int SCHEDULE_START_HOUR = 7;
+    private static final int SCHEDULE_END_HOUR = 22;
+    private static final int SCHEDULE_SLOT_MINUTES = 30;
+    private static final List<DayOfWeek> SCHEDULE_DAYS = List.of(
+            DayOfWeek.MONDAY,
+            DayOfWeek.TUESDAY,
+            DayOfWeek.WEDNESDAY,
+            DayOfWeek.THURSDAY,
+            DayOfWeek.FRIDAY,
+            DayOfWeek.SATURDAY,
+            DayOfWeek.SUNDAY
+    );
+
     private final AuthenticationService authenticationService = new AuthenticationService();
     private final AttendanceRegistrationService attendanceService = new AttendanceRegistrationService();
     private final AttendanceReportService reportService = new AttendanceReportService();
@@ -192,12 +211,14 @@ public class AttendanceGuiApp extends Application {
                 Teacher: piotr.kowalski@pja.edu.pl / teacher
                 Admin: admin@pja.edu.pl / admin""");
         VBox content = new VBox(18, new Label("University Academic Management System"), form, accounts);
+        content.getStyleClass().add("login-panel");
         content.setPadding(new Insets(36));
-        primaryStage.setScene(new Scene(content, 620, 420));
+        primaryStage.setScene(styledScene(content, 620, 420));
     }
 
     private void showMainLayout() {
         mainLayout = new BorderPane();
+        mainLayout.getStyleClass().add("app-shell");
         pageHistory.clear();
         currentPageTitle = null;
         currentPageContent = null;
@@ -205,12 +226,16 @@ public class AttendanceGuiApp extends Application {
         backButton.setDisable(true);
         backButton.setOnAction(event -> goBack());
         userLabel = new Label();
+        userLabel.getStyleClass().add("user-label");
         pageMessageLabel = new Label();
+        pageMessageLabel.getStyleClass().add("page-title");
         navigation = new VBox(8);
+        navigation.getStyleClass().add("navigation");
         navigation.setPadding(new Insets(12));
         navigation.setPrefWidth(230);
 
         HBox header = new HBox(16, backButton, userLabel, pageMessageLabel);
+        header.getStyleClass().add("app-header");
         header.setPadding(new Insets(12));
         mainLayout.setTop(header);
         mainLayout.setLeft(navigation);
@@ -218,7 +243,13 @@ public class AttendanceGuiApp extends Application {
         buildNavigation();
         setPage("Public Weekly Schedule", createPublicScheduleView());
 
-        primaryStage.setScene(new Scene(mainLayout, 1180, 720));
+        primaryStage.setScene(styledScene(mainLayout, 1180, 720));
+    }
+
+    private Scene styledScene(Node root, double width, double height) {
+        Scene scene = new Scene((javafx.scene.Parent) root, width, height);
+        scene.getStylesheets().add(getClass().getResource("/uams.css").toExternalForm());
+        return scene;
     }
 
     private void refreshUserLabel() {
@@ -243,6 +274,7 @@ public class AttendanceGuiApp extends Application {
             navigation.getChildren().add(new Separator());
             navigation.getChildren().add(navButton("Group Students Association", () -> setPage("GroupStudentsAssociationView", createGroupStudentsAssociationView())));
             navigation.getChildren().add(navButton("My Class Meetings", () -> setPage("My Class Meetings", createTeacherMeetingsView())));
+            navigation.getChildren().add(navButton("Weekly Schedules", () -> setPage("Weekly Schedules", createWeeklyScheduleView(false))));
             navigation.getChildren().add(navButton("Create Class Meeting", () -> setPage("Create Class Meeting", createClassMeetingForm(false))));
         }
         if (authenticationService.isAdmin()) {
@@ -302,23 +334,170 @@ public class AttendanceGuiApp extends Application {
     }
 
     private BorderPane createPublicScheduleView() {
-        ObservableList<ClassMeeting> scheduleMeetings = FXCollections.observableArrayList(classMeetingRepository.findClassMeetingsForCurrentWeek());
-        Label message = new Label("Double-click a meeting. Details open only for your own group, assigned teacher, or admin.");
-        ListView<ClassMeeting> list = createMeetingList(scheduleMeetings);
-        list.setOnMouseClicked(event -> {
-            ClassMeeting selected = list.getSelectionModel().getSelectedItem();
-            if (selected != null && event.getClickCount() == 2) {
-                tryOpenMeetingDetails(selected, message);
-            }
-        });
-
-        Button refresh = new Button("Refresh");
-        refresh.setOnAction(event -> scheduleMeetings.setAll(classMeetingRepository.findClassMeetingsForCurrentWeek()));
         BorderPane root = new BorderPane();
-        root.setTop(padded(new VBox(8, message, refresh)));
-        root.setCenter(list);
-        BorderPane.setMargin(list, new Insets(0, 12, 12, 12));
+        Label message = new Label("Public view shows subject, group, class type, and room only. Click a meeting to open details if you are involved.");
+        message.getStyleClass().add("muted-label");
+        DatePicker weekPicker = new DatePicker(LocalDate.now());
+        Label weekLabel = new Label();
+        weekLabel.getStyleClass().add("section-title");
+
+        Runnable refreshSchedule = () -> {
+            LocalDate weekStart = weekStart(weekPicker.getValue() == null ? LocalDate.now() : weekPicker.getValue());
+            weekPicker.setValue(weekStart);
+            weekLabel.setText("Week " + weekStart + " - " + weekStart.plusDays(6));
+            root.setCenter(createPublicScheduleGrid(weekStart, message));
+        };
+
+        Button previous = new Button("Previous Week");
+        previous.setOnAction(event -> {
+            weekPicker.setValue(weekStart(weekPicker.getValue()).minusWeeks(1));
+            refreshSchedule.run();
+        });
+        Button today = new Button("This Week");
+        today.setOnAction(event -> {
+            weekPicker.setValue(LocalDate.now());
+            refreshSchedule.run();
+        });
+        Button next = new Button("Next Week");
+        next.setOnAction(event -> {
+            weekPicker.setValue(weekStart(weekPicker.getValue()).plusWeeks(1));
+            refreshSchedule.run();
+        });
+        Button refresh = new Button("Refresh");
+        refresh.setOnAction(event -> refreshSchedule.run());
+
+        HBox controls = new HBox(10, previous, today, next, new Label("Show week of"), weekPicker, refresh);
+        controls.setAlignment(Pos.CENTER_LEFT);
+        VBox top = new VBox(8, weekLabel, message, controls);
+        top.getStyleClass().add("page-toolbar");
+        root.setTop(top);
+        refreshSchedule.run();
         return root;
+    }
+
+    private ScrollPane createPublicScheduleGrid(LocalDate weekStart, Label message) {
+        List<ClassMeeting> meetings = classMeetingRepository.findByDateRange(weekStart, weekStart.plusDays(6)).stream()
+                .filter(meeting -> meeting.getStatus() == null || (meeting.getStatus() != ClassMeetingStatus.CANCELLED && meeting.getStatus() != ClassMeetingStatus.DRAFT))
+                .toList();
+        GridPane grid = new GridPane();
+        grid.getStyleClass().add("schedule-grid");
+        grid.getColumnConstraints().add(column(72, 82, 96));
+        for (int i = 0; i < SCHEDULE_DAYS.size(); i++) {
+            grid.getColumnConstraints().add(column(136, 160, Double.MAX_VALUE));
+        }
+        grid.getRowConstraints().add(row(48));
+
+        addScheduleHeader(grid, 0, "Time");
+        for (int i = 0; i < SCHEDULE_DAYS.size(); i++) {
+            LocalDate date = weekStart.plusDays(i);
+            addScheduleHeader(grid, i + 1, dayHeader(SCHEDULE_DAYS.get(i), date));
+        }
+
+        int slotCount = ((SCHEDULE_END_HOUR - SCHEDULE_START_HOUR) * 60) / SCHEDULE_SLOT_MINUTES;
+        for (int slot = 0; slot < slotCount; slot++) {
+            grid.getRowConstraints().add(row(34));
+            LocalTime time = LocalTime.of(SCHEDULE_START_HOUR, 0).plusMinutes((long) slot * SCHEDULE_SLOT_MINUTES);
+            addTimeCell(grid, slot + 1, time);
+            for (int day = 1; day <= SCHEDULE_DAYS.size(); day++) {
+                StackPane cell = new StackPane();
+                cell.getStyleClass().add(time.getMinute() == 0 ? "schedule-cell-hour" : "schedule-cell-half");
+                grid.add(cell, day, slot + 1);
+            }
+        }
+
+        for (ClassMeeting meeting : meetings) {
+            int dayIndex = (int) java.time.temporal.ChronoUnit.DAYS.between(weekStart, meeting.getMeetingDate());
+            if (dayIndex < 0 || dayIndex >= SCHEDULE_DAYS.size() || meeting.getTime() == null) {
+                continue;
+            }
+            LocalTime start = meeting.getTime().getStartTime();
+            LocalTime end = meeting.getTime().getEndTime();
+            if (start == null || end == null || !end.isAfter(start)) {
+                continue;
+            }
+            int row = (int) Math.floor(java.time.Duration.between(LocalTime.of(SCHEDULE_START_HOUR, 0), start).toMinutes() / (double) SCHEDULE_SLOT_MINUTES) + 1;
+            int span = (int) Math.ceil(java.time.Duration.between(start, end).toMinutes() / (double) SCHEDULE_SLOT_MINUTES);
+            if (row < 1 || row >= slotCount + 1) {
+                continue;
+            }
+            span = Math.max(1, Math.min(span, slotCount - row + 1));
+            VBox card = createPublicScheduleCard(meeting, message);
+            grid.add(card, dayIndex + 1, row, 1, span);
+        }
+
+        ScrollPane scroll = new ScrollPane(grid);
+        scroll.getStyleClass().add("schedule-scroll");
+        scroll.setFitToWidth(true);
+        scroll.setFitToHeight(false);
+        return scroll;
+    }
+
+    private ColumnConstraints column(double min, double pref, double max) {
+        ColumnConstraints constraints = new ColumnConstraints();
+        constraints.setMinWidth(min);
+        constraints.setPrefWidth(pref);
+        constraints.setMaxWidth(max);
+        constraints.setHgrow(Priority.ALWAYS);
+        return constraints;
+    }
+
+    private RowConstraints row(double height) {
+        RowConstraints constraints = new RowConstraints();
+        constraints.setMinHeight(height);
+        constraints.setPrefHeight(height);
+        return constraints;
+    }
+
+    private void addScheduleHeader(GridPane grid, int column, String text) {
+        Label label = new Label(text);
+        label.getStyleClass().add("schedule-header");
+        label.setMaxSize(Double.MAX_VALUE, Double.MAX_VALUE);
+        label.setAlignment(Pos.CENTER);
+        grid.add(label, column, 0);
+    }
+
+    private void addTimeCell(GridPane grid, int row, LocalTime time) {
+        Label label = new Label(time.toString());
+        label.getStyleClass().add("schedule-time");
+        label.setMaxSize(Double.MAX_VALUE, Double.MAX_VALUE);
+        label.setAlignment(Pos.TOP_CENTER);
+        grid.add(label, 0, row);
+    }
+
+    private VBox createPublicScheduleCard(ClassMeeting meeting, Label message) {
+        Label subject = new Label(safe(meeting.getSubject().getName()));
+        subject.getStyleClass().add("schedule-card-subject");
+        subject.setWrapText(true);
+        Label meta = new Label(safe(meeting.getGroup().getCode()) + " • " + meeting.getClassType());
+        meta.getStyleClass().add("schedule-card-meta");
+        meta.setWrapText(true);
+        Label room = new Label(publicRoomLabel(meeting));
+        room.getStyleClass().add("schedule-card-room");
+        room.setWrapText(true);
+        VBox card = new VBox(3, subject, meta, room);
+        card.getStyleClass().add("schedule-card");
+        card.setMaxSize(Double.MAX_VALUE, Double.MAX_VALUE);
+        card.setOnMouseClicked(event -> tryOpenMeetingDetails(meeting, message));
+        return card;
+    }
+
+    private String publicRoomLabel(ClassMeeting meeting) {
+        if (meeting.getRoomBooking() == null || meeting.getRoomBooking().getRoom() == null) {
+            return "Room not specified";
+        }
+        String roomNumber = meeting.getRoomBooking().getRoom().getRoomNumber();
+        if (roomNumber != null && !roomNumber.isBlank()) {
+            return "Room " + roomNumber;
+        }
+        return "Room not specified";
+    }
+
+    private LocalDate weekStart(LocalDate date) {
+        return date.with(java.time.temporal.TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY));
+    }
+
+    private String dayHeader(DayOfWeek day, LocalDate date) {
+        return day.name().substring(0, 3) + System.lineSeparator() + date;
     }
 
     private Node createStudentScheduleView() {
@@ -450,7 +629,7 @@ public class AttendanceGuiApp extends Application {
             scheduleAccessService.assertCanOpenFullDetails(currentUser(), meeting);
             showClassMeetingDetails(meeting);
         } catch (RuntimeException ex) {
-            message.setText(ex.getMessage());
+            message.setText(ExceptionMessages.userMessage(ex));
         }
     }
 
@@ -580,10 +759,12 @@ public class AttendanceGuiApp extends Application {
     private Node createAdminNotificationView() {
         ObservableList<Notification> notifications = FXCollections.observableArrayList(notificationManagementService.findAllWithRecipients());
         TableView<Notification> table = new TableView<>(notifications);
+        TableColumn<Notification, String> channelColumn = new TableColumn<>("Channel");
+        channelColumn.setCellValueFactory(data -> new javafx.beans.property.SimpleStringProperty(notificationChannel(data.getValue())));
         TableColumn<Notification, String> recipientColumn = new TableColumn<>("Recipient");
         recipientColumn.setCellValueFactory(data -> new javafx.beans.property.SimpleStringProperty(notificationRecipientLabel(data.getValue())));
-        TableColumn<Notification, String> emailColumn = new TableColumn<>("Delivery email");
-        emailColumn.setCellValueFactory(data -> new javafx.beans.property.SimpleStringProperty(notificationDeliveryEmail(data.getValue())));
+        TableColumn<Notification, String> emailColumn = new TableColumn<>("Channel target");
+        emailColumn.setCellValueFactory(data -> new javafx.beans.property.SimpleStringProperty(notificationChannelTarget(data.getValue())));
         TableColumn<Notification, String> titleColumn = new TableColumn<>("Title");
         titleColumn.setCellValueFactory(data -> new javafx.beans.property.SimpleStringProperty(safe(data.getValue().getTitle())));
         TableColumn<Notification, String> messageColumn = new TableColumn<>("Message");
@@ -591,6 +772,7 @@ public class AttendanceGuiApp extends Application {
         messageColumn.setPrefWidth(300);
         TableColumn<Notification, String> statusColumn = new TableColumn<>("Status");
         statusColumn.setCellValueFactory(data -> new javafx.beans.property.SimpleStringProperty(String.valueOf(data.getValue().getStatus())));
+        table.getColumns().add(channelColumn);
         table.getColumns().add(recipientColumn);
         table.getColumns().add(emailColumn);
         table.getColumns().add(titleColumn);
@@ -607,7 +789,8 @@ public class AttendanceGuiApp extends Application {
         ComboBox<Person> recipientBox = new ComboBox<>(FXCollections.observableArrayList(people));
         recipientBox.setConverter(converter(this::personLabelWithAllEmails));
         ComboBox<StudentGroup> groupBox = new ComboBox<>(groups);
-        groupBox.setConverter(converter(StudentGroup::getCode));
+        groupBox.setConverter(converter(group -> group.getCode() + " | Semester " + group.getSemester().getNumber()
+                + " | " + group.getField().getName()));
         if (!groups.isEmpty()) {
             groupBox.getSelectionModel().selectFirst();
         }
@@ -626,12 +809,12 @@ public class AttendanceGuiApp extends Application {
         TextArea messageArea = new TextArea();
         messageArea.setPromptText("notification message");
         messageArea.setPrefRowCount(3);
-        ComboBox<String> channelBox = new ComboBox<>(FXCollections.observableArrayList("EMAIL"));
+        ComboBox<String> channelBox = new ComboBox<>(FXCollections.observableArrayList("EMAIL", "SYSTEM"));
         channelBox.getSelectionModel().select("EMAIL");
-        channelBox.setDisable(true);
         ComboBox<NotificationStatus> statusBox = new ComboBox<>(FXCollections.observableArrayList(NotificationStatus.values()));
         statusBox.getSelectionModel().select(NotificationStatus.PENDING);
         Label message = new Label();
+        Label targetListLabel = new Label("Delivery emails");
         Runnable refreshTargets = () -> {
             boolean groupSelected = groupMode.equals(targetModeBox.getValue());
             boolean allSelected = allUsersMode.equals(targetModeBox.getValue());
@@ -639,31 +822,45 @@ public class AttendanceGuiApp extends Application {
             recipientBox.setVisible(!groupSelected && !allSelected);
             groupBox.setManaged(groupSelected);
             groupBox.setVisible(groupSelected);
-            refreshNotificationEmailTargets(targetModeBox.getValue(), recipientBox.getValue(), groupBox.getValue(), people, emailTargetList);
+            boolean emailChannel = "EMAIL".equals(channelBox.getValue());
+            targetListLabel.setText(emailChannel ? "Delivery emails" : "In-app recipients");
+            refreshNotificationTargets(channelBox.getValue(), targetModeBox.getValue(), recipientBox.getValue(), groupBox.getValue(), people, emailTargetList);
         };
         targetModeBox.valueProperty().addListener((observable, oldValue, newValue) -> refreshTargets.run());
         recipientBox.valueProperty().addListener((observable, oldValue, newValue) -> refreshTargets.run());
         groupBox.valueProperty().addListener((observable, oldValue, newValue) -> refreshTargets.run());
+        channelBox.valueProperty().addListener((observable, oldValue, newValue) -> refreshTargets.run());
         if (!people.isEmpty()) {
             recipientBox.getSelectionModel().selectFirst();
         } else {
             refreshTargets.run();
         }
-        Button selectAllEmails = new Button("Select All Emails");
+        Button selectAllEmails = new Button("Select All Targets");
         selectAllEmails.setOnAction(event -> emailTargetList.getSelectionModel().selectAll());
-        Button clearEmails = new Button("Clear Email Selection");
+        Button clearEmails = new Button("Clear Selection");
         clearEmails.setOnAction(event -> emailTargetList.getSelectionModel().clearSelection());
 
         Button create = new Button("Create Notification");
         create.setOnAction(event -> runWithMessage(message, () -> {
+            if ("SYSTEM".equals(channelBox.getValue())) {
+                List<Long> recipientIds = emailTargetList.getSelectionModel()
+                        .getSelectedItems()
+                        .stream()
+                        .map(target -> target.person().getId())
+                        .toList();
+                int created = notificationManagementService.createSystemNotifications(recipientIds,
+                        titleField.getText(), messageArea.getText(), statusBox.getValue()).size();
+                notifications.setAll(notificationManagementService.findAllWithRecipients());
+                titleField.clear();
+                messageArea.clear();
+                return "Created " + created + " system notification(s).";
+            }
+
             List<NotificationManagementService.EmailRecipient> recipients = emailTargetList.getSelectionModel()
                     .getSelectedItems()
                     .stream()
                     .map(target -> new NotificationManagementService.EmailRecipient(target.person().getId(), target.email()))
                     .toList();
-            if (recipients.isEmpty() || titleField.getText().isBlank() || messageArea.getText().isBlank()) {
-                throw new IllegalArgumentException("At least one delivery email, title, and message are required.");
-            }
             int created = notificationManagementService.createEmailNotifications(recipients,
                     titleField.getText(), messageArea.getText(), statusBox.getValue()).size();
             notifications.setAll(notificationManagementService.findAllWithRecipients());
@@ -679,9 +876,12 @@ public class AttendanceGuiApp extends Application {
                 titleField.setText(safe(selected.getTitle()));
                 messageArea.setText(selected.getMessage());
                 statusBox.setValue(selected.getStatus());
+                channelBox.getSelectionModel().select(selected instanceof SystemNotification ? "SYSTEM" : "EMAIL");
                 refreshTargets.run();
                 if (selected instanceof EmailNotification emailNotification) {
                     selectNotificationEmailTarget(emailTargetList, emailNotification.getDeliveryEmail());
+                } else {
+                    emailTargetList.getSelectionModel().selectFirst();
                 }
             }
         });
@@ -711,7 +911,7 @@ public class AttendanceGuiApp extends Application {
                 new HBox(10, new Label("Target"), targetModeBox),
                 recipientBox,
                 groupBox,
-                new Label("Delivery emails"),
+                targetListLabel,
                 emailTargetList,
                 new HBox(10, selectAllEmails, clearEmails),
                 titleField,
@@ -725,31 +925,36 @@ public class AttendanceGuiApp extends Application {
         return box;
     }
 
-    private void refreshNotificationEmailTargets(String mode, Person recipient, StudentGroup group,
-                                                 List<Person> allPeople,
-                                                 ListView<NotificationEmailTarget> emailTargetList) {
+    private void refreshNotificationTargets(String channel, String mode, Person recipient, StudentGroup group,
+                                            List<Person> allPeople,
+                                            ListView<NotificationEmailTarget> emailTargetList) {
         List<NotificationEmailTarget> targets;
+        boolean emailChannel = "EMAIL".equals(channel);
         if ("Group".equals(mode)) {
-            targets = group == null ? List.of() : notificationEmailTargets(new ArrayList<>(group.getStudents()));
+            targets = group == null ? List.of() : notificationTargets(new ArrayList<>(group.getStudents()), emailChannel);
         } else if ("All users".equals(mode)) {
-            targets = notificationEmailTargets(allPeople);
+            targets = notificationTargets(allPeople, emailChannel);
         } else {
-            targets = recipient == null ? List.of() : notificationEmailTargets(List.of(recipient));
+            targets = recipient == null ? List.of() : notificationTargets(List.of(recipient), emailChannel);
         }
         emailTargetList.setItems(FXCollections.observableArrayList(targets));
         emailTargetList.getSelectionModel().clearSelection();
-        if ("Single user".equals(mode) && recipient != null) {
+        if (emailChannel && "Single user".equals(mode) && recipient != null) {
             selectNotificationEmailTarget(emailTargetList, recipient.getPrimaryEmail());
         } else {
             emailTargetList.getSelectionModel().selectAll();
         }
     }
 
-    private List<NotificationEmailTarget> notificationEmailTargets(List<? extends Person> people) {
+    private List<NotificationEmailTarget> notificationTargets(List<? extends Person> people, boolean emailChannel) {
         List<Person> sortedPeople = new ArrayList<>(people);
         sortedPeople.sort(Comparator.comparing(Person::getSurname).thenComparing(Person::getName));
         List<NotificationEmailTarget> targets = new ArrayList<>();
         for (Person person : sortedPeople) {
+            if (!emailChannel) {
+                targets.add(new NotificationEmailTarget(person, null));
+                continue;
+            }
             for (String email : sortedEmails(person)) {
                 targets.add(new NotificationEmailTarget(person, email));
             }
@@ -763,7 +968,8 @@ public class AttendanceGuiApp extends Application {
             return;
         }
         for (int i = 0; i < emailTargetList.getItems().size(); i++) {
-            if (emailTargetList.getItems().get(i).email().equalsIgnoreCase(email)) {
+            String targetEmail = emailTargetList.getItems().get(i).email();
+            if (targetEmail != null && targetEmail.equalsIgnoreCase(email)) {
                 emailTargetList.getSelectionModel().select(i);
                 return;
             }
@@ -805,6 +1011,17 @@ public class AttendanceGuiApp extends Application {
         return "";
     }
 
+    private String notificationChannel(Notification notification) {
+        return notification instanceof SystemNotification ? "System" : "Email";
+    }
+
+    private String notificationChannelTarget(Notification notification) {
+        if (notification instanceof EmailNotification emailNotification) {
+            return safe(emailNotification.getDeliveryEmail());
+        }
+        return "In-app";
+    }
+
     private ListCell<Notification> notificationCell() {
         return new ListCell<>() {
             @Override
@@ -815,8 +1032,8 @@ public class AttendanceGuiApp extends Application {
                     return;
                 }
                 String recipient = notificationRecipientLabel(notification);
-                String deliveryEmail = notificationDeliveryEmail(notification);
-                String target = deliveryEmail.isBlank() ? recipient : recipient + " | " + deliveryEmail;
+                String deliveryTarget = notificationChannelTarget(notification);
+                String target = deliveryTarget.isBlank() ? recipient : recipient + " | " + deliveryTarget;
                 setText(notification.getStatus() + " | " + target + " | " + notification.getMessage());
             }
         };
@@ -824,7 +1041,8 @@ public class AttendanceGuiApp extends Application {
 
     private record NotificationEmailTarget(Person person, String email) {
         private String label() {
-            return person.getName() + " " + person.getSurname() + " | " + email;
+            String target = email == null || email.isBlank() ? "In-app notification" : email;
+            return person.getName() + " " + person.getSurname() + " | " + target;
         }
     }
 
@@ -1022,8 +1240,8 @@ public class AttendanceGuiApp extends Application {
                     return;
                 }
                 String recipient = notificationRecipientLabel(notification);
-                String deliveryEmail = notificationDeliveryEmail(notification);
-                String target = deliveryEmail.isBlank() ? recipient : recipient + " | " + deliveryEmail;
+                String deliveryTarget = notificationChannelTarget(notification);
+                String target = deliveryTarget.isBlank() ? recipient : recipient + " | " + deliveryTarget;
                 setText(notification.getCreatedAt() + " | " + notification.getStatus() + " | " + target + " | " + notification.getTitle());
             }
         });
@@ -1406,7 +1624,10 @@ public class AttendanceGuiApp extends Application {
             @Override
             protected void updateItem(StudentGroup group, boolean empty) {
                 super.updateItem(group, empty);
-                setText(empty || group == null ? null : group.getCode() + " | max " + group.getMaxSize());
+                setText(empty || group == null ? null : group.getCode()
+                        + " | Semester " + group.getSemester().getNumber()
+                        + " | " + group.getField().getName()
+                        + " | max " + group.getMaxSize());
             }
         });
         TextField groupCode = new TextField();
@@ -1428,8 +1649,6 @@ public class AttendanceGuiApp extends Application {
         });
         TextField subjectName = new TextField();
         subjectName.setPromptText("subject name");
-        ComboBox<StudentGroup> subjectGroup = new ComboBox<>(groups);
-        subjectGroup.setConverter(converter(StudentGroup::getCode));
         ComboBox<Semester> subjectSemester = new ComboBox<>(semesters);
         subjectSemester.setConverter(converter(this::semesterAcademicLabel));
         ComboBox<Field> subjectField = new ComboBox<>();
@@ -1587,22 +1806,6 @@ public class AttendanceGuiApp extends Application {
             refresh.run();
             return "Subject deleted.";
         }));
-        Button assignSubjectGroup = new Button("Assign Subject To Group");
-        assignSubjectGroup.setOnAction(event -> runWithMessage(message, () -> {
-            Subject subject = subjectList.getSelectionModel().getSelectedItem();
-            StudentGroup group = subjectGroup.getValue();
-            adminManagementService.assignSubjectToGroup(subject == null ? null : subject.getId(), group == null ? null : group.getId());
-            refresh.run();
-            return "Subject assigned to group.";
-        }));
-        Button removeSubjectGroup = new Button("Remove Subject From Group");
-        removeSubjectGroup.setOnAction(event -> runWithMessage(message, () -> {
-            Subject subject = subjectList.getSelectionModel().getSelectedItem();
-            StudentGroup group = subjectGroup.getValue();
-            adminManagementService.removeSubjectFromGroup(subject == null ? null : subject.getId(), group == null ? null : group.getId());
-            refresh.run();
-            return "Subject removed from group.";
-        }));
         Button assignSubjectSemester = new Button("Assign To Curriculum");
         assignSubjectSemester.setOnAction(event -> runWithMessage(message, () -> {
             Subject subject = subjectList.getSelectionModel().getSelectedItem();
@@ -1634,8 +1837,7 @@ public class AttendanceGuiApp extends Application {
         VBox subjectBox = new VBox(8, new Label("Subjects"), subjectList, subjectName,
                 new HBox(8, createSubject, updateSubject, deleteSubject),
                 new Label("Subject curriculum"), subjectSemester, subjectField,
-                new HBox(8, assignSubjectSemester, removeSubjectSemester),
-                new Label("Subject-group assignment"), subjectGroup, new HBox(8, assignSubjectGroup, removeSubjectGroup));
+                new HBox(8, assignSubjectSemester, removeSubjectSemester));
 
         HBox columns = new HBox(12, fieldBox, semesterBox, groupBox, subjectBox);
         columns.setPadding(new Insets(12));
@@ -1798,7 +2000,7 @@ public class AttendanceGuiApp extends Application {
         roomBox.setConverter(converter(Room::getRoomNumber));
 
         if (adminMode) {
-            teacherBox.setItems(FXCollections.observableArrayList(new GenericRepository<>(Teacher.class).findAll()));
+            teacherBox.setItems(FXCollections.observableArrayList(new TeacherRepository().findAllWithQualifiedSubjects()));
             subjectBox.setItems(FXCollections.observableArrayList(new GenericRepository<>(Subject.class).findAll()));
         } else {
             Teacher teacher = new TeacherRepository().findByIdWithQualifiedSubjects(currentUser().getId())
@@ -1872,148 +2074,119 @@ public class AttendanceGuiApp extends Application {
     }
 
     private Node createAdminWeeklyScheduleView() {
-        ObservableList<WeeklyScheduleEntry> entries = FXCollections.observableArrayList(weeklyScheduleEntryRepository.findAllWithDetails());
+        return createWeeklyScheduleView(true);
+    }
+
+    private Node createWeeklyScheduleView(boolean adminMode) {
+        ObservableList<WeeklyScheduleEntry> entries = FXCollections.observableArrayList();
         ListView<WeeklyScheduleEntry> entriesList = new ListView<>(entries);
         entriesList.setCellFactory(view -> weeklyScheduleEntryCell());
 
-        ComboBox<StudentGroup> groupBox = new ComboBox<>(FXCollections.observableArrayList(
+        ComboBox<StudentGroup> groupFilter = new ComboBox<>(FXCollections.observableArrayList(
                 new StudentGroupRepository().findAllWithAcademicContext()
         ));
-        ComboBox<Semester> semesterBox = new ComboBox<>(FXCollections.observableArrayList(new SemesterRepository().findAllWithFields()));
-        ComboBox<Field> fieldBox = new ComboBox<>(FXCollections.observableArrayList(new GenericRepository<>(Field.class).findAll()));
-        ComboBox<Subject> subjectBox = new ComboBox<>(FXCollections.observableArrayList(new GenericRepository<>(Subject.class).findAll()));
-        ComboBox<Teacher> teacherBox = new ComboBox<>(FXCollections.observableArrayList(new GenericRepository<>(Teacher.class).findAll()));
-        ComboBox<ClassType> classTypeBox = new ComboBox<>(FXCollections.observableArrayList(ClassType.values()));
-        ComboBox<MeetingMode> modeBox = new ComboBox<>(FXCollections.observableArrayList(MeetingMode.values()));
-        ComboBox<DayOfWeek> dayBox = new ComboBox<>(FXCollections.observableArrayList(DayOfWeek.values()));
-        TextField startField = new TextField("10:00");
-        TextField endField = new TextField("11:30");
-        ComboBox<Room> roomBox = new ComboBox<>(FXCollections.observableArrayList(roomService.findAll()));
-        TextField onlineLinkField = new TextField();
+        ComboBox<Teacher> teacherFilter = new ComboBox<>(FXCollections.observableArrayList(new TeacherRepository().findAllWithQualifiedSubjects()));
+        ComboBox<ClassType> classTypeFilter = new ComboBox<>(FXCollections.observableArrayList(ClassType.values()));
+        ComboBox<MeetingMode> modeFilter = new ComboBox<>(FXCollections.observableArrayList(MeetingMode.values()));
+        groupFilter.setPromptText("All groups");
+        teacherFilter.setPromptText("All teachers");
+        classTypeFilter.setPromptText("All types");
+        modeFilter.setPromptText("All modes");
         Label message = new Label();
         Label generatedCount = new Label("Generated meetings count: 0");
 
-        groupBox.setConverter(converter(StudentGroup::getCode));
-        semesterBox.setConverter(converter(semester -> "Semester " + semester.getNumber()));
-        fieldBox.setConverter(converter(Field::getName));
-        subjectBox.setConverter(converter(Subject::getName));
-        teacherBox.setConverter(converter(teacher -> teacher.getName() + " " + teacher.getSurname()));
-        roomBox.setConverter(converter(Room::getRoomNumber));
+        groupFilter.setConverter(converter(group -> group.getCode() + " | Semester " + group.getSemester().getNumber()
+                + " | " + group.getField().getName()));
+        teacherFilter.setConverter(converter(teacher -> teacher.getName() + " " + teacher.getSurname()));
 
-        groupBox.valueProperty().addListener((observable, oldValue, selected) -> {
-            if (selected != null) {
-                semesterBox.setValue(selected.getSemester());
-                fieldBox.setValue(selected.getField());
+        Runnable refreshEntries = () -> entries.setAll(weeklyScheduleEntryRepository.findWithFilters(
+                groupFilter.getValue() == null ? null : groupFilter.getValue().getId(),
+                teacherFilter.getValue() == null ? (adminMode ? null : currentUser().getId()) : teacherFilter.getValue().getId(),
+                classTypeFilter.getValue(),
+                modeFilter.getValue()
+        ));
+        if (!adminMode) {
+            teacherFilter.setValue((Teacher) currentUser());
+            teacherFilter.setDisable(true);
+        }
+        refreshEntries.run();
+
+        Button applyFilters = new Button("Apply Filters");
+        applyFilters.setOnAction(event -> refreshEntries.run());
+        Button clearFilters = new Button("Clear Filters");
+        clearFilters.setOnAction(event -> {
+            groupFilter.getSelectionModel().clearSelection();
+            if (adminMode) {
+                teacherFilter.getSelectionModel().clearSelection();
             }
+            classTypeFilter.getSelectionModel().clearSelection();
+            modeFilter.getSelectionModel().clearSelection();
+            refreshEntries.run();
         });
-        semesterBox.setDisable(true);
-        fieldBox.setDisable(true);
 
-        Button save = new Button("Save Weekly Schedule Entry");
-        save.setOnAction(event -> runWithMessage(message, () -> {
-            WeeklyScheduleEntry entry = buildWeeklyScheduleEntry(groupBox, semesterBox, fieldBox, subjectBox, teacherBox,
-                    classTypeBox, modeBox, dayBox, startField, endField, roomBox, onlineLinkField);
-            weeklyScheduleEntryRepository.saveWithManagedReferences(entry);
-            entries.setAll(weeklyScheduleEntryRepository.findAllWithDetails());
-            return "Weekly schedule entry saved.";
+        ObservableList<ClassMeeting> sourceMeetings = FXCollections.observableArrayList(
+                adminMode
+                        ? classMeetingRepository.findAllWithBasicData()
+                        : classMeetingRepository.findByTeacherId(currentUser().getId())
+        );
+        ListView<ClassMeeting> sourceMeetingList = createMeetingList(sourceMeetings);
+        sourceMeetingList.setPrefHeight(190);
+
+        Button markWeekly = new Button("Mark Selected Meeting As Weekly");
+        markWeekly.setOnAction(event -> runWithMessage(message, () -> {
+            ClassMeeting selected = sourceMeetingList.getSelectionModel().getSelectedItem();
+            if (selected == null) {
+                throw new IllegalArgumentException("Select a class meeting first.");
+            }
+            weeklyScheduleEntryRepository.createFromClassMeeting(selected.getId());
+            refreshEntries.run();
+            sourceMeetings.setAll(adminMode
+                    ? classMeetingRepository.findAllWithBasicData()
+                    : classMeetingRepository.findByTeacherId(currentUser().getId()));
+            return "Class meeting marked as a weekly schedule entry.";
         }));
 
         Button generate = new Button("Generate Class Meetings");
         generate.setOnAction(event -> runWithMessage(message, () -> {
             WeeklyScheduleEntry selected = entriesList.getSelectionModel().getSelectedItem();
             if (selected == null) {
-                selected = buildWeeklyScheduleEntry(groupBox, semesterBox, fieldBox, subjectBox, teacherBox,
-                        classTypeBox, modeBox, dayBox, startField, endField, roomBox, onlineLinkField);
-                selected = weeklyScheduleEntryRepository.saveWithManagedReferences(selected);
-                entries.setAll(weeklyScheduleEntryRepository.findAllWithDetails());
+                throw new IllegalArgumentException("Select a weekly schedule entry first.");
             }
             List<ClassMeeting> generated = scheduleGenerationService.generateClassMeetingsForSemester(selected);
             generatedCount.setText("Generated meetings count: " + generated.size());
+            sourceMeetings.setAll(adminMode
+                    ? classMeetingRepository.findAllWithBasicData()
+                    : classMeetingRepository.findByTeacherId(currentUser().getId()));
             return "Generated " + generated.size() + " class meetings.";
         }));
 
         GridPane form = new GridPane();
         form.setHgap(10);
         form.setVgap(8);
-        form.add(new Label("Student group"), 0, 0);
-        form.add(groupBox, 1, 0);
-        form.add(new Label("Semester"), 0, 1);
-        form.add(semesterBox, 1, 1);
-        form.add(new Label("Field"), 0, 2);
-        form.add(fieldBox, 1, 2);
-        form.add(new Label("Subject"), 0, 3);
-        form.add(subjectBox, 1, 3);
-        form.add(new Label("Teacher"), 0, 4);
-        form.add(teacherBox, 1, 4);
-        form.add(new Label("Class type"), 0, 5);
-        form.add(classTypeBox, 1, 5);
-        form.add(new Label("Meeting mode"), 0, 6);
-        form.add(modeBox, 1, 6);
-        form.add(new Label("Day of week"), 0, 7);
-        form.add(dayBox, 1, 7);
-        form.add(new Label("Start time"), 0, 8);
-        form.add(startField, 1, 8);
-        form.add(new Label("End time"), 0, 9);
-        form.add(endField, 1, 9);
-        form.add(new Label("Room"), 0, 10);
-        form.add(roomBox, 1, 10);
-        form.add(new Label("Online link"), 0, 11);
-        form.add(onlineLinkField, 1, 11);
-        form.add(new HBox(10, save, generate), 1, 12);
-        form.add(message, 1, 13);
+        form.add(new Label("Group"), 0, 0);
+        form.add(groupFilter, 1, 0);
+        form.add(new Label("Teacher"), 2, 0);
+        form.add(teacherFilter, 3, 0);
+        form.add(new Label("Class type"), 0, 1);
+        form.add(classTypeFilter, 1, 1);
+        form.add(new Label("Mode"), 2, 1);
+        form.add(modeFilter, 3, 1);
+        form.add(new HBox(10, applyFilters, clearFilters), 1, 2, 3, 1);
 
         VBox box = new VBox(10,
                 new Label("Existing weekly schedule entries"),
                 entriesList,
                 generatedCount,
-                new Label("Create weekly schedule entry"),
-                form
+                new HBox(10, generate),
+                new Label("Filters"),
+                form,
+                new Label("Source class meetings"),
+                sourceMeetingList,
+                new HBox(10, markWeekly),
+                message
         );
         box.setPadding(new Insets(12));
         return new ScrollPane(box);
-    }
-
-    private WeeklyScheduleEntry buildWeeklyScheduleEntry(ComboBox<StudentGroup> groupBox,
-                                                         ComboBox<Semester> semesterBox,
-                                                         ComboBox<Field> fieldBox,
-                                                         ComboBox<Subject> subjectBox,
-                                                         ComboBox<Teacher> teacherBox,
-                                                         ComboBox<ClassType> classTypeBox,
-                                                         ComboBox<MeetingMode> modeBox,
-                                                         ComboBox<DayOfWeek> dayBox,
-                                                         TextField startField,
-                                                         TextField endField,
-                                                         ComboBox<Room> roomBox,
-                                                         TextField onlineLinkField) {
-        StudentGroup group = groupBox.getValue();
-        Semester semester = semesterBox.getValue();
-        Field field = fieldBox.getValue();
-        Subject subject = subjectBox.getValue();
-        Teacher selectedTeacher = teacherBox.getValue();
-        if (group == null || semester == null || field == null || subject == null || selectedTeacher == null
-                || classTypeBox.getValue() == null || modeBox.getValue() == null || dayBox.getValue() == null) {
-            throw new IllegalArgumentException("Group, semester, field, subject, teacher, type, mode, and day are required.");
-        }
-        Teacher teacher = new TeacherRepository().findByIdWithQualifiedSubjects(selectedTeacher.getId())
-                .orElseThrow(() -> new IllegalArgumentException("Teacher not found."));
-        if (!teacher.isQualifiedFor(subject)) {
-            throw new IllegalArgumentException("Teacher is not qualified to teach this subject.");
-        }
-        LocalTime start = LocalTime.parse(startField.getText());
-        LocalTime end = LocalTime.parse(endField.getText());
-        if (!start.isBefore(end)) {
-            throw new IllegalArgumentException("Start time must be before end time.");
-        }
-        Room room = roomBox.getValue();
-        String onlineLink = onlineLinkField.getText();
-        if (modeBox.getValue() == MeetingMode.CLASSROOM && room == null) {
-            throw new IllegalArgumentException("Room is required for classroom weekly schedule.");
-        }
-        if (modeBox.getValue() == MeetingMode.ONLINE && (onlineLink == null || onlineLink.isBlank())) {
-            throw new IllegalArgumentException("Online link is required for online weekly schedule.");
-        }
-        return new WeeklyScheduleEntry(group, subject, teacher, classTypeBox.getValue(), modeBox.getValue(),
-                dayBox.getValue(), start, end, room, onlineLink, semester, field);
     }
 
     private BorderPane createAdminReportView() {
@@ -2103,7 +2276,7 @@ public class AttendanceGuiApp extends Application {
 
     private void loadReportFilters() {
         semesterFilter.setItems(FXCollections.observableArrayList(new GenericRepository<>(Semester.class).findAll()));
-        teacherFilter.setItems(FXCollections.observableArrayList(new GenericRepository<>(Teacher.class).findAll()));
+        teacherFilter.setItems(FXCollections.observableArrayList(new TeacherRepository().findAllWithQualifiedSubjects()));
         subjectFilter.setItems(FXCollections.observableArrayList(new GenericRepository<>(Subject.class).findAll()));
         groupFilter.setItems(FXCollections.observableArrayList(new GenericRepository<>(StudentGroup.class).findAll()));
     }
@@ -2129,7 +2302,7 @@ public class AttendanceGuiApp extends Application {
                     .toList());
             reportMessageLabel.setText(reportService.buildConclusionMessage(currentReport));
         } catch (RuntimeException ex) {
-            reportMessageLabel.setText("Cannot generate report: " + ex.getMessage());
+            reportMessageLabel.setText("Cannot generate report: " + ExceptionMessages.userMessage(ex));
         }
     }
 
@@ -2159,7 +2332,7 @@ public class AttendanceGuiApp extends Application {
             Path exported = reportExportService.exportToCsv(currentReport, file.toPath());
             reportMessageLabel.setText("Report exported to " + exported.getFileName() + ".");
         } catch (RuntimeException ex) {
-            reportMessageLabel.setText(ex.getMessage());
+            reportMessageLabel.setText(ExceptionMessages.userMessage(ex));
         }
     }
 
@@ -2338,7 +2511,7 @@ public class AttendanceGuiApp extends Application {
         try {
             label.setText(action.run());
         } catch (RuntimeException ex) {
-            label.setText(ex.getMessage());
+            label.setText(ExceptionMessages.userMessage(ex));
         }
     }
 

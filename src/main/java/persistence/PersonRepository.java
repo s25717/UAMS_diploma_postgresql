@@ -2,6 +2,8 @@ package persistence;
 
 import jakarta.persistence.EntityManager;
 import model.Person;
+import model.Student;
+import model.Teacher;
 
 import java.util.List;
 import java.util.Optional;
@@ -49,13 +51,48 @@ public class PersonRepository extends GenericRepository<Person> {
 
     public List<Person> findAllWithEmails() {
         try (EntityManager em = emf.createEntityManager()) {
-            return em.createQuery("""
+            List<Person> people = em.createQuery("""
                     select distinct p
                     from Person p
                     left join fetch p.emails
                     order by p.surname, p.name
                     """, Person.class)
                     .getResultList();
+
+            List<Long> teacherIds = people.stream()
+                    .filter(Teacher.class::isInstance)
+                    .map(Person::getId)
+                    .toList();
+            if (!teacherIds.isEmpty()) {
+                em.createQuery("""
+                        select distinct t
+                        from Teacher t
+                        left join fetch t.qualifiedSubjects
+                        where t.id in :ids
+                        """, Teacher.class)
+                        .setParameter("ids", teacherIds)
+                        .getResultList();
+            }
+
+            List<Long> studentIds = people.stream()
+                    .filter(Student.class::isInstance)
+                    .map(Person::getId)
+                    .toList();
+            if (!studentIds.isEmpty()) {
+                em.createQuery("""
+                        select distinct s
+                        from Student s
+                        left join fetch s.group g
+                        left join fetch g.semesterField sf
+                        left join fetch sf.semester
+                        left join fetch sf.field
+                        where s.id in :ids
+                        """, Student.class)
+                        .setParameter("ids", studentIds)
+                        .getResultList();
+            }
+
+            return people;
         }
     }
 }
