@@ -101,5 +101,5 @@ Not finished yet:
 - Full automated test suite.
 - CI pipeline on GitHub.
 - Production-grade packaging/installer.
-- Regenerated PNG images for every recently edited PlantUML diagram.
+- PNG images for every recently edited diagram.
 - Final thesis text polish outside this repository.
