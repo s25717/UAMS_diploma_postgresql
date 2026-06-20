@@ -111,21 +111,40 @@ ORDER BY t.scheduled_at;
 
 -- 8. Curriculum availability lookup.
 -- Relevant indexes:
---   uk_semester_field_subject
+--   uk_semester_field_subject_context
 --   idx_curriculum_subject
---   idx_curriculum_field_semester
+--   idx_curriculum_semester_field_id
 EXPLAIN (ANALYZE, BUFFERS)
 WITH selected_context AS (
-    SELECT semester_id, field_id
+    SELECT id
     FROM semester_field
     ORDER BY semester_id, field_id
     LIMIT 1
 )
-SELECT curriculum.semester_id,
-       curriculum.field_id,
+SELECT curriculum.semester_field_id,
        curriculum.subject_id
 FROM semester_field_subject curriculum
 JOIN selected_context context
-  ON context.semester_id = curriculum.semester_id
- AND context.field_id = curriculum.field_id
+  ON context.id = curriculum.semester_field_id
 ORDER BY curriculum.subject_id;
+
+-- 9. Weekly schedule filter lookup through source class meeting.
+-- Relevant indexes:
+--   idx_weekly_schedule_source_class_meeting
+--   idx_class_meeting_group_week_slot
+--   idx_class_meeting_teacher_week_slot
+--   idx_class_meeting_type_mode
+EXPLAIN (ANALYZE, BUFFERS)
+SELECT w.id,
+       cm.day_of_week,
+       cm.start_time,
+       cm.end_time,
+       cm.class_type,
+       cm.meeting_mode,
+       cm.group_id,
+       cm.teacher_id
+FROM weekly_schedule_entry w
+JOIN class_meeting cm ON cm.id = w.source_class_meeting_id
+WHERE cm.group_id = (SELECT id FROM student_group ORDER BY id LIMIT 1)
+  AND cm.class_type IN ('LECTURE', 'TUTORIAL', 'LABORATORY')
+ORDER BY cm.day_of_week, cm.start_time;

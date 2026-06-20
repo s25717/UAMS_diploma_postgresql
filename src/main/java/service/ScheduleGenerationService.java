@@ -24,50 +24,61 @@ public class ScheduleGenerationService {
             WeeklyScheduleEntry managedEntry = em.createQuery("""
                     select distinct e
                     from WeeklyScheduleEntry e
-                    join fetch e.group
-                    join fetch e.semester
-                    join fetch e.field
-                    join fetch e.subject
-                    join fetch e.teacher t
+                    join fetch e.sourceClassMeeting source
+                    join fetch source.group g
+                    join fetch g.semesterField sf
+                    join fetch sf.semester
+                    join fetch sf.field
+                    join fetch source.subject
+                    join fetch source.teacher t
                     left join fetch t.qualifiedSubjects
-                    left join fetch e.room
+                    left join fetch source.roomBooking rb
+                    left join fetch rb.room
                     where e.id = :id
                     """, WeeklyScheduleEntry.class)
                     .setParameter("id", entry.getId())
                     .getSingleResult();
-            if (!managedEntry.getTeacher().isQualifiedFor(managedEntry.getSubject())) {
+            ClassMeeting source = managedEntry.getSourceClassMeeting();
+            if (!source.getTeacher().isQualifiedFor(source.getSubject())) {
                 throw new IllegalArgumentException("Teacher is not qualified to teach this subject.");
-            }
-            if (!managedEntry.getGroup().getSemester().getId().equals(managedEntry.getSemester().getId())
-                    || !managedEntry.getGroup().getField().getId().equals(managedEntry.getField().getId())) {
-                throw new IllegalArgumentException("Weekly schedule semester and field must match the selected group.");
             }
             Long semesterSubjectMatches = em.createQuery("""
                     select count(c)
                     from SemesterFieldSubject c
-                    where c.semester.id = :semesterId
-                    and c.field.id = :fieldId
+                    where c.semesterField.id = :semesterFieldId
                     and c.subject.id = :subjectId
                     """, Long.class)
-                    .setParameter("semesterId", managedEntry.getSemester().getId())
-                    .setParameter("fieldId", managedEntry.getField().getId())
-                    .setParameter("subjectId", managedEntry.getSubject().getId())
+                    .setParameter("semesterFieldId", source.getGroup().getSemesterField().getId())
+                    .setParameter("subjectId", source.getSubject().getId())
                     .getSingleResult();
             if (semesterSubjectMatches == 0) {
                 throw new IllegalArgumentException("Subject is not available in the selected semester and field.");
             }
-            if (managedEntry.getMeetingMode() == MeetingMode.CLASSROOM && managedEntry.getRoom() != null) {
+            if (source.getMeetingMode() == MeetingMode.CLASSROOM && managedEntry.getRoom() != null) {
                 Long groupSize = em.createQuery("select count(s) from Student s where s.group.id = :groupId", Long.class)
-                        .setParameter("groupId", managedEntry.getGroup().getId())
+                        .setParameter("groupId", source.getGroup().getId())
                         .getSingleResult();
                 if (managedEntry.getRoom().getCapacity() < groupSize) {
                     throw new IllegalArgumentException("Room capacity is lower than the selected group size.");
                 }
             }
-            LocalDate date = managedEntry.getSemester().getStartDate();
-            LocalDate end = managedEntry.getSemester().getEndDate();
+            LocalDate date = source.getGroup().getSemester().getStartDate();
+            LocalDate end = source.getGroup().getSemester().getEndDate();
             while (!date.isAfter(end)) {
                 if (date.getDayOfWeek() == managedEntry.getDayOfWeek()) {
+                    Long existingForDate = em.createQuery("""
+                            select count(cm)
+                            from ClassMeeting cm
+                            where cm.scheduleEntry.id = :entryId
+                            and cm.meetingDate = :date
+                            """, Long.class)
+                            .setParameter("entryId", managedEntry.getId())
+                            .setParameter("date", date)
+                            .getSingleResult();
+                    if (existingForDate > 0) {
+                        date = date.plusDays(1);
+                        continue;
+                    }
                     MeetingSlot slot = new MeetingSlot(date, managedEntry.getStartTime(), managedEntry.getEndTime());
                     if (managedEntry.getMeetingMode() == MeetingMode.CLASSROOM && managedEntry.getRoom() != null) {
                         Long roomId = managedEntry.getRoom().getId();
@@ -92,19 +103,23 @@ public class ScheduleGenerationService {
                     }
                     ClassMeeting meeting = new ClassMeeting(
                             date,
-                            managedEntry.getRoom() == null ? null : managedEntry.getRoom().getRoomNumber(),
-                            managedEntry.getOnlineMeetingLink(),
+                            managedEntry.getRoom() == null ? source.getLocation() : managedEntry.getRoom().getRoomNumber(),
+                            source.getOnlineMeetingLink(),
                             new MeetingTime(managedEntry.getDayOfWeek(), managedEntry.getStartTime(), managedEntry.getEndTime()),
-                            managedEntry.getClassType(),
-                            managedEntry.getMeetingMode(),
-                            managedEntry.getSubject(),
-                            managedEntry.getTeacher(),
-                            managedEntry.getGroup()
+                            source.getClassType(),
+                            source.getMeetingMode(),
+                            source.getSubject(),
+                            source.getTeacher(),
+                            source.getGroup()
                     );
-                    meeting.setStatus(ClassMeetingStatus.SCHEDULED);
+                    meeting.setStatus(source.getStatus() == ClassMeetingStatus.DRAFT
+                            ? ClassMeetingStatus.DRAFT
+                            : ClassMeetingStatus.SCHEDULED);
                     meeting.setScheduleEntry(managedEntry);
                     em.persist(meeting);
-                    if (managedEntry.getMeetingMode() == MeetingMode.CLASSROOM && managedEntry.getRoom() != null) {
+                    if (meeting.getStatus() == ClassMeetingStatus.SCHEDULED
+                            && managedEntry.getMeetingMode() == MeetingMode.CLASSROOM
+                            && managedEntry.getRoom() != null) {
                         em.persist(new RoomBooking(slot, BookingStatus.CONFIRMED, managedEntry.getRoom(), meeting));
                     }
                     generated.add(meeting);

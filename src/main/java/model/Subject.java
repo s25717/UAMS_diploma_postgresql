@@ -7,8 +7,6 @@ import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
-import jakarta.persistence.JoinTable;
-import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToMany;
 import jakarta.persistence.OneToMany;
 import jakarta.validation.constraints.NotBlank;
@@ -25,14 +23,6 @@ public class Subject {
     @NotBlank
     @Column(nullable = false, unique = true)
     private String name;
-
-    @ManyToMany(fetch = FetchType.LAZY)
-    @JoinTable(
-            name = "subject_group",
-            joinColumns = @JoinColumn(name = "subject_id"),
-            inverseJoinColumns = @JoinColumn(name = "group_id")
-    )
-    private Set<StudentGroup> groups = new HashSet<>();
 
     @OneToMany(mappedBy = "subject", cascade = CascadeType.ALL, orphanRemoval = true)
     private Set<ClassMeeting> classMeetings = new HashSet<>();
@@ -66,14 +56,6 @@ public class Subject {
         this.name = name;
     }
 
-    public Set<StudentGroup> getGroups() {
-        return groups;
-    }
-
-    public void setGroups(Set<StudentGroup> groups) {
-        this.groups = groups;
-    }
-
     public Set<ClassMeeting> getClassMeetings() {
         return classMeetings;
     }
@@ -99,12 +81,10 @@ public class Subject {
     }
 
     public void addGroup(StudentGroup group) {
-        groups.add(group);
-        group.getSubjects().add(this);
+        throw new UnsupportedOperationException("Subjects are assigned through semester-field curriculum.");
     }
 
     public void removeGroup(StudentGroup group) {
-        groups.remove(group);
-        group.getSubjects().remove(this);
+        throw new UnsupportedOperationException("Subjects are assigned through semester-field curriculum.");
     }
 }

@@ -15,7 +15,8 @@ public class SemesterRepository extends GenericRepository<Semester> {
             return em.createQuery("""
                     select distinct sem
                     from Semester sem
-                    left join fetch sem.fields
+                    left join fetch sem.semesterFields sf
+                    left join fetch sf.field
                     order by sem.number, sem.id
                     """, Semester.class)
                     .getResultList();

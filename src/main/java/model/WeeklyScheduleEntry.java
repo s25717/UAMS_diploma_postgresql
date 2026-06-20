@@ -1,16 +1,13 @@
 package model;
 
 import jakarta.persistence.Entity;
-import jakarta.persistence.EnumType;
-import jakarta.persistence.Enumerated;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
-import jakarta.persistence.ManyToOne;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.OneToOne;
 import jakarta.validation.constraints.NotNull;
-import model.enums.ClassType;
-import model.enums.MeetingMode;
 
 import java.time.DayOfWeek;
 import java.time.LocalTime;
@@ -22,92 +19,76 @@ public class WeeklyScheduleEntry {
     private Long id;
 
     @NotNull
-    @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    private StudentGroup group;
-
-    @NotNull
-    @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    private Subject subject;
-
-    @NotNull
-    @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    private Teacher teacher;
-
-    @NotNull
-    @Enumerated(EnumType.STRING)
-    private ClassType classType;
-
-    @NotNull
-    @Enumerated(EnumType.STRING)
-    private MeetingMode meetingMode;
-
-    @NotNull
-    @Enumerated(EnumType.STRING)
-    private DayOfWeek dayOfWeek;
-
-    @NotNull
-    private LocalTime startTime;
-
-    @NotNull
-    private LocalTime endTime;
-
-    @ManyToOne(fetch = FetchType.LAZY)
-    private Room room;
-
-    private String onlineMeetingLink;
-
-    @NotNull
-    @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    private Semester semester;
-
-    @NotNull
-    @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    private Field field;
+    @OneToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "source_class_meeting_id", nullable = false, unique = true)
+    private ClassMeeting sourceClassMeeting;
 
     protected WeeklyScheduleEntry() {
     }
 
-    public WeeklyScheduleEntry(StudentGroup group, Subject subject, Teacher teacher, ClassType classType,
-                               MeetingMode meetingMode, DayOfWeek dayOfWeek, LocalTime startTime,
-                               LocalTime endTime, Room room, String onlineMeetingLink, Semester semester, Field field) {
-        this.group = group;
-        this.subject = subject;
-        this.teacher = teacher;
-        this.classType = classType;
-        this.meetingMode = meetingMode;
-        this.dayOfWeek = dayOfWeek;
-        this.startTime = startTime;
-        this.endTime = endTime;
-        this.room = room;
-        this.onlineMeetingLink = onlineMeetingLink;
-        this.semester = semester;
-        this.field = field;
+    public WeeklyScheduleEntry(ClassMeeting sourceClassMeeting) {
+        this.sourceClassMeeting = sourceClassMeeting;
     }
 
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }
-    public StudentGroup getGroup() { return group; }
-    public void setGroup(StudentGroup group) { this.group = group; }
-    public Subject getSubject() { return subject; }
-    public void setSubject(Subject subject) { this.subject = subject; }
-    public Teacher getTeacher() { return teacher; }
-    public void setTeacher(Teacher teacher) { this.teacher = teacher; }
-    public ClassType getClassType() { return classType; }
-    public void setClassType(ClassType classType) { this.classType = classType; }
-    public MeetingMode getMeetingMode() { return meetingMode; }
-    public void setMeetingMode(MeetingMode meetingMode) { this.meetingMode = meetingMode; }
-    public DayOfWeek getDayOfWeek() { return dayOfWeek; }
-    public void setDayOfWeek(DayOfWeek dayOfWeek) { this.dayOfWeek = dayOfWeek; }
-    public LocalTime getStartTime() { return startTime; }
-    public void setStartTime(LocalTime startTime) { this.startTime = startTime; }
-    public LocalTime getEndTime() { return endTime; }
-    public void setEndTime(LocalTime endTime) { this.endTime = endTime; }
-    public Room getRoom() { return room; }
-    public void setRoom(Room room) { this.room = room; }
-    public String getOnlineMeetingLink() { return onlineMeetingLink; }
-    public void setOnlineMeetingLink(String onlineMeetingLink) { this.onlineMeetingLink = onlineMeetingLink; }
-    public Semester getSemester() { return semester; }
-    public void setSemester(Semester semester) { this.semester = semester; }
-    public Field getField() { return field; }
-    public void setField(Field field) { this.field = field; }
+
+    public ClassMeeting getSourceClassMeeting() { return sourceClassMeeting; }
+    public void setSourceClassMeeting(ClassMeeting sourceClassMeeting) { this.sourceClassMeeting = sourceClassMeeting; }
+    public StudentGroup getGroup() { return sourceClassMeeting == null ? null : sourceClassMeeting.getGroup(); }
+    public void setGroup(StudentGroup group) { validateDerived("group"); }
+    public Subject getSubject() { return sourceClassMeeting == null ? null : sourceClassMeeting.getSubject(); }
+    public void setSubject(Subject subject) { validateDerived("subject"); }
+    public Teacher getTeacher() { return sourceClassMeeting == null ? null : sourceClassMeeting.getTeacher(); }
+    public void setTeacher(Teacher teacher) { validateDerived("teacher"); }
+    public model.enums.ClassType getClassType() { return sourceClassMeeting == null ? null : sourceClassMeeting.getClassType(); }
+    public void setClassType(model.enums.ClassType classType) { validateDerived("class type"); }
+    public model.enums.MeetingMode getMeetingMode() { return sourceClassMeeting == null ? null : sourceClassMeeting.getMeetingMode(); }
+    public void setMeetingMode(model.enums.MeetingMode meetingMode) { validateDerived("meeting mode"); }
+    public DayOfWeek getDayOfWeek() {
+        if (sourceClassMeeting == null) {
+            return null;
+        }
+        if (sourceClassMeeting.getTime() != null && sourceClassMeeting.getTime().getDayOfWeek() != null) {
+            return sourceClassMeeting.getTime().getDayOfWeek();
+        }
+        return sourceClassMeeting.getMeetingDate() == null ? null : sourceClassMeeting.getMeetingDate().getDayOfWeek();
+    }
+    public void setDayOfWeek(DayOfWeek dayOfWeek) { validateDerived("day of week"); }
+    public LocalTime getStartTime() {
+        return sourceClassMeeting == null || sourceClassMeeting.getTime() == null ? null : sourceClassMeeting.getTime().getStartTime();
+    }
+    public void setStartTime(LocalTime startTime) { validateDerived("start time"); }
+    public LocalTime getEndTime() {
+        return sourceClassMeeting == null || sourceClassMeeting.getTime() == null ? null : sourceClassMeeting.getTime().getEndTime();
+    }
+    public void setEndTime(LocalTime endTime) { validateDerived("end time"); }
+    public Room getRoom() {
+        return sourceClassMeeting == null || sourceClassMeeting.getRoomBooking() == null
+                ? null
+                : sourceClassMeeting.getRoomBooking().getRoom();
+    }
+    public void setRoom(Room room) { validateDerived("room"); }
+    public String getOnlineMeetingLink() {
+        return sourceClassMeeting == null ? null : sourceClassMeeting.getOnlineMeetingLink();
+    }
+    public void setOnlineMeetingLink(String onlineMeetingLink) { validateDerived("online meeting link"); }
+    public Semester getSemester() {
+        StudentGroup group = getGroup();
+        return group == null ? null : group.getSemester();
+    }
+    public void setSemester(Semester semester) {
+        validateDerived("semester");
+    }
+    public Field getField() {
+        StudentGroup group = getGroup();
+        return group == null ? null : group.getField();
+    }
+    public void setField(Field field) {
+        validateDerived("field");
+    }
+
+    private void validateDerived(String attribute) {
+        throw new UnsupportedOperationException("Weekly schedule " + attribute + " is derived from the source class meeting.");
+    }
 }

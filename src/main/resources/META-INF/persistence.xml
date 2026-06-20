@@ -15,6 +15,7 @@
         <class>model.SystemNotification</class>
         <class>model.Field</class>
         <class>model.Semester</class>
+        <class>model.SemesterField</class>
         <class>model.SemesterFieldSubject</class>
         <class>model.StudentGroup</class>
         <class>model.Subject</class>

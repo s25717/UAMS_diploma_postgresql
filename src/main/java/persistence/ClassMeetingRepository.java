@@ -110,7 +110,9 @@ public class ClassMeetingRepository extends GenericRepository<ClassMeeting> {
                     join fetch cm.subject s
                     join fetch cm.teacher t
                     join fetch cm.group g
-                    join fetch g.semester sem
+                    join fetch g.semesterField sf
+                    join fetch sf.semester sem
+                    join fetch sf.field
                     left join fetch g.students
                     left join fetch cm.roomBooking rb
                     where 1 = 1

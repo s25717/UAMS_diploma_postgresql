@@ -25,9 +25,9 @@ Status legend:
 
 | Rule | Status | Enforcement layer | Evidence / notes |
 |---|---|---|---|
-| BR-08: fields and semesters have a many-to-many relationship | Implemented | PostgreSQL/JPA/service | `semester_field` and `Semester.fields`; the admin selects one or more fields for a semester. |
+| BR-08: fields and semesters have a many-to-many relationship | Implemented | PostgreSQL/JPA/service | `semester_field` is an explicit entity with a surrogate `id`; the admin selects one or more fields for a semester. |
 | BR-09: semester belongs to at least one field | Implemented | PostgreSQL/Java | `@Size(min = 1)` plus deferred PostgreSQL cardinality triggers on `semester` and `semester_field`. |
-| BR-10: student group belongs to one semester-field context | Implemented | PostgreSQL/JPA | Required `student_group.semester_id` and `field_id`; composite FK references `semester_field`. |
+| BR-10: student group belongs to one semester-field context | Implemented | PostgreSQL/JPA | Required `student_group.semester_field_id` references `semester_field(id)`. |
 | BR-11: student belongs to at most one group | Implemented | Schema/model | `student.group_id` is a single nullable FK. |
 | BR-12: group maximum size | Implemented | PostgreSQL/service/model | `StudentGroup.maxSize`, service checks on create/update, and PostgreSQL triggers prevent groups exceeding max size. |
 | BR-13: student can view only own group details | Implemented | GUI/repository | Student navigation only exposes own group via `createMyGroupView`. |
@@ -46,12 +46,12 @@ Status legend:
 
 | Rule | Status | Enforcement layer | Evidence / notes |
 |---|---|---|---|
-| BR-19: group has weekly schedule in semester and field | Implemented | PostgreSQL/model/schema | `weekly_schedule_entry` stores `group_id`, `semester_id`, and `field_id`; a composite FK requires the exact group context. |
-| BR-20: WeeklyScheduleEntry is a template | Implemented | Model/design | `WeeklyScheduleEntry` stores recurring plan data. |
+| BR-19: group has weekly schedule in semester and field | Implemented | PostgreSQL/model/schema | `weekly_schedule_entry.source_class_meeting_id` points to a source class meeting; group, semester, and field are derived through `class_meeting.group_id -> student_group.semester_field_id`. |
+| BR-20: WeeklyScheduleEntry is a recurring marker | Implemented | Model/design | `WeeklyScheduleEntry` stores only the source class meeting; subject, teacher, group, type, mode, day, time, room, and link are derived from that meeting. |
 | BR-21: ClassMeeting is concrete occurrence | Implemented | Model/design | `ClassMeeting` stores concrete date and time. |
 | BR-22: generated meetings inside semester dates | Implemented | Service | `ScheduleGenerationService` iterates from semester start to end. DB trigger still recommended for manual meetings. |
 | BR-23: generated meeting matches weekly day | Implemented | Service | `ScheduleGenerationService` checks `date.getDayOfWeek() == entry.dayOfWeek`. |
-| BR-24: generation validates teacher qualification | Implemented | Service/PostgreSQL | `ScheduleGenerationService` and PostgreSQL trigger on `weekly_schedule_entry`. |
+| BR-24: generation validates teacher qualification | Implemented | Service/PostgreSQL | `ScheduleGenerationService` and PostgreSQL trigger validate the source class meeting. |
 | BR-25: generation validates room availability | Implemented | Service/PostgreSQL | Service checks overlapping active bookings; PostgreSQL exclusion constraint prevents overlaps on insert. |
 
 ## Class Meetings
@@ -59,7 +59,7 @@ Status legend:
 | Rule | Status | Enforcement layer | Evidence / notes |
 |---|---|---|---|
 | BR-26: meeting has subject, teacher, group | Implemented | PostgreSQL/JPA | NOT NULL FKs in `class_meeting`. |
-| BR-27: subject valid for group academic context | Implemented | PostgreSQL/JPA/service | `semester_field_subject` is the explicit curriculum association; triggers require the subject in the group's exact semester-field pair and in `subject_group`. |
+| BR-27: subject valid for group academic context | Implemented | PostgreSQL/JPA/service | `semester_field_subject` is the explicit curriculum association; triggers require the subject in the group's exact semester-field context. |
 | BR-28: teacher qualified for subject | Implemented | PostgreSQL/service/model | `trg_class_meeting_teacher_subject`, `ClassMeeting.validateTeacherQualification`. |
 | BR-29: group must exist | Implemented | PostgreSQL | `class_meeting.group_id` FK. |
 | BR-30: meeting time valid | Implemented | PostgreSQL | `chk_class_meeting_time_range`. |

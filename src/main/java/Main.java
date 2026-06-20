@@ -10,6 +10,7 @@ import model.Room;
 import model.RoomBooking;
 import model.ScheduledNotificationTask;
 import model.Semester;
+import model.SemesterField;
 import model.Student;
 import model.StudentGroup;
 import model.Subject;
@@ -76,9 +77,8 @@ public class Main {
             Field field = new Field("Informatics");
             Semester semester = new Semester(3);
             StudentGroup group = new StudentGroup("G3A");
-            field.addSemester(semester);
-            semester.addGroup(group);
-            group.setField(field);
+            SemesterField semesterField = field.addSemester(semester);
+            group.setSemesterField(semesterField);
 
             Student jan = new Student(
                     "Jan",
@@ -106,7 +106,6 @@ public class Main {
             );
 
             Subject databases = new Subject("Databases");
-            databases.addGroup(group);
             teacher.addQualifiedSubject(databases);
 
             LocalDate demoMeetingDate = LocalDate.now().minusWeeks(1);
@@ -150,6 +149,7 @@ public class Main {
 
             em.persist(field);
             em.persist(semester);
+            em.persist(group);
             em.persist(room);
             em.persist(jan);
             em.persist(anna);
@@ -189,7 +189,6 @@ public class Main {
                     attendance_report_semesters,
                     class_meeting,
                     weekly_schedule_entry,
-                    subject_group,
                     teacher_subject,
                     person_emails,
                     room_booking,

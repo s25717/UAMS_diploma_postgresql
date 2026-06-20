@@ -13,7 +13,7 @@ import jakarta.validation.constraints.NotNull;
 @Entity
 @Table(
         name = "semester_field_subject",
-        uniqueConstraints = @UniqueConstraint(columnNames = {"semester_id", "field_id", "subject_id"})
+        uniqueConstraints = @UniqueConstraint(columnNames = {"semester_field_id", "subject_id"})
 )
 public class SemesterFieldSubject {
     @Id
@@ -22,11 +22,7 @@ public class SemesterFieldSubject {
 
     @NotNull
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    private Semester semester;
-
-    @NotNull
-    @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    private Field field;
+    private SemesterField semesterField;
 
     @NotNull
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
@@ -35,10 +31,13 @@ public class SemesterFieldSubject {
     protected SemesterFieldSubject() {
     }
 
-    public SemesterFieldSubject(Semester semester, Field field, Subject subject) {
-        this.semester = semester;
-        this.field = field;
+    public SemesterFieldSubject(SemesterField semesterField, Subject subject) {
+        this.semesterField = semesterField;
         this.subject = subject;
+    }
+
+    public SemesterFieldSubject(Semester semester, Field field, Subject subject) {
+        this(semester.getSemesterField(field), subject);
     }
 
     public Long getId() {
@@ -46,11 +45,15 @@ public class SemesterFieldSubject {
     }
 
     public Semester getSemester() {
-        return semester;
+        return semesterField == null ? null : semesterField.getSemester();
     }
 
     public Field getField() {
-        return field;
+        return semesterField == null ? null : semesterField.getField();
+    }
+
+    public SemesterField getSemesterField() {
+        return semesterField;
     }
 
     public Subject getSubject() {

@@ -43,22 +43,28 @@ public class ClassMeetingService {
             validateCreationStatus(meeting);
             validateMeetingDateInsideSemester(meeting, group);
             validateSubjectAvailableForGroup(em, subject.getId(), group.getId());
+            validateClassMeetingAvailability(em, meeting, teacher, group);
 
             Room room = null;
-            if (meeting.getMeetingMode() == MeetingMode.CLASSROOM && meeting.isScheduled()) {
-                if (roomId == null || slot == null) {
+            if (meeting.getMeetingMode() == MeetingMode.CLASSROOM) {
+                if (meeting.isScheduled() && (roomId == null || slot == null)) {
                     throw new IllegalArgumentException("Classroom meeting requires room and meeting slot.");
                 }
-                room = em.find(Room.class, roomId);
-                if (room == null) {
-                    throw new IllegalArgumentException("Room not found: " + roomId);
-                }
-                validateRoomCapacity(em, room, group);
-                if (roomBookingRepository.existsOverlappingActiveBooking(roomId, slot)) {
-                    throw new IllegalArgumentException("Room is already booked for an overlapping time slot.");
-                }
-                if (meeting.getLocation() == null || meeting.getLocation().isBlank()) {
-                    meeting.setLocation(room.getRoomNumber());
+                if (roomId != null || slot != null) {
+                    if (roomId == null || slot == null) {
+                        throw new IllegalArgumentException("Room booking requires both room and meeting slot.");
+                    }
+                    room = em.find(Room.class, roomId);
+                    if (room == null) {
+                        throw new IllegalArgumentException("Room not found: " + roomId);
+                    }
+                    validateRoomCapacity(em, room, group);
+                    if (roomBookingRepository.existsOverlappingActiveBooking(roomId, slot)) {
+                        throw new IllegalArgumentException("Room is already booked for an overlapping time slot.");
+                    }
+                    if (meeting.getLocation() == null || meeting.getLocation().isBlank()) {
+                        meeting.setLocation(room.getRoomNumber());
+                    }
                 }
             }
             if (meeting.getMeetingMode() == MeetingMode.ONLINE
@@ -226,8 +232,7 @@ public class ClassMeetingService {
                 select count(c)
                 from StudentGroup g, SemesterFieldSubject c
                 where g.id = :groupId
-                and c.semester = g.semester
-                and c.field = g.field
+                and c.semesterField = g.semesterField
                 and c.subject.id = :subjectId
                 """, Long.class)
                 .setParameter("groupId", groupId)
@@ -236,18 +241,37 @@ public class ClassMeetingService {
         if (semesterMatches == 0) {
             throw new IllegalArgumentException("Subject is not available in the group's semester and field.");
         }
-        Long groupMatches = em.createQuery("""
-                select count(g)
-                from StudentGroup g
-                join g.subjects subject
-                where g.id = :groupId
-                and subject.id = :subjectId
-                """, Long.class)
-                .setParameter("groupId", groupId)
-                .setParameter("subjectId", subjectId)
-                .getSingleResult();
-        if (groupMatches == 0) {
-            throw new IllegalArgumentException("Subject is not assigned to the selected group.");
+    }
+
+    private void validateClassMeetingAvailability(EntityManager em, ClassMeeting meeting, Teacher teacher, StudentGroup group) {
+        validateNoOverlappingMeeting(em, meeting, "cm.group.id", group.getId(), "Selected group");
+        validateNoOverlappingMeeting(em, meeting, "cm.teacher.id", teacher.getId(), "Selected teacher");
+    }
+
+    private void validateNoOverlappingMeeting(EntityManager em, ClassMeeting meeting, String propertyPath, Long entityId, String label) {
+        StringBuilder jpql = new StringBuilder("""
+                select count(cm)
+                from ClassMeeting cm
+                where cm.status <> :cancelled
+                and cm.meetingDate = :meetingDate
+                and cm.time.startTime < :endTime
+                and cm.time.endTime > :startTime
+                and %s = :entityId
+                """.formatted(propertyPath));
+        if (meeting.getId() != null) {
+            jpql.append(" and cm.id <> :meetingId");
+        }
+        var query = em.createQuery(jpql.toString(), Long.class)
+                .setParameter("cancelled", ClassMeetingStatus.CANCELLED)
+                .setParameter("meetingDate", meeting.getMeetingDate())
+                .setParameter("startTime", meeting.getTime().getStartTime())
+                .setParameter("endTime", meeting.getTime().getEndTime())
+                .setParameter("entityId", entityId);
+        if (meeting.getId() != null) {
+            query.setParameter("meetingId", meeting.getId());
+        }
+        if (query.getSingleResult() > 0) {
+            throw new IllegalArgumentException(label + " already has an overlapping class meeting.");
         }
     }
 

@@ -7,10 +7,8 @@ import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
-import jakarta.persistence.JoinColumn;
-import jakarta.persistence.JoinTable;
-import jakarta.persistence.ManyToMany;
 import jakarta.persistence.OneToMany;
+import jakarta.persistence.Transient;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
@@ -18,7 +16,9 @@ import jakarta.validation.constraints.Size;
 
 import java.util.HashSet;
 import java.time.LocalDate;
+import java.util.Collections;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 @Entity
 public class Semester {
@@ -35,24 +35,13 @@ public class Semester {
 
     private LocalDate endDate;
 
-    @Size(min = 1)
-    @ManyToMany(fetch = FetchType.LAZY)
-    @JoinTable(
-            name = "semester_field",
-            joinColumns = @JoinColumn(name = "semester_id"),
-            inverseJoinColumns = @JoinColumn(name = "field_id")
-    )
-    private Set<Field> fields = new HashSet<>();
-
     @Valid
+    @Size(min = 1)
     @OneToMany(mappedBy = "semester", cascade = CascadeType.ALL, orphanRemoval = true)
+    private Set<SemesterField> semesterFields = new HashSet<>();
+
+    @Transient
     private Set<StudentGroup> groups = new HashSet<>();
-
-    @OneToMany(mappedBy = "semester", cascade = CascadeType.ALL, orphanRemoval = true)
-    private Set<WeeklyScheduleEntry> weeklyScheduleEntries = new HashSet<>();
-
-    @OneToMany(mappedBy = "semester", cascade = CascadeType.ALL, orphanRemoval = true)
-    private Set<SemesterFieldSubject> curriculumAssignments = new HashSet<>();
 
     protected Semester() {
     }
@@ -80,15 +69,22 @@ public class Semester {
     }
 
     public Set<Field> getFields() {
-        return fields;
+        return semesterFields.stream()
+                .map(SemesterField::getField)
+                .collect(Collectors.toCollection(HashSet::new));
     }
 
     public void setFields(Set<Field> fields) {
-        this.fields = fields;
+        new HashSet<>(semesterFields).forEach(context -> removeField(context.getField()));
+        if (fields != null) {
+            fields.forEach(this::addField);
+        }
     }
 
     public Set<StudentGroup> getGroups() {
-        return groups;
+        return semesterFields.stream()
+                .flatMap(context -> context.getGroups().stream())
+                .collect(Collectors.toCollection(HashSet::new));
     }
 
     public void setGroups(Set<StudentGroup> groups) {
@@ -112,52 +108,82 @@ public class Semester {
     }
 
     public Set<WeeklyScheduleEntry> getWeeklyScheduleEntries() {
-        return weeklyScheduleEntries;
+        return Collections.emptySet();
     }
 
     public void setWeeklyScheduleEntries(Set<WeeklyScheduleEntry> weeklyScheduleEntries) {
-        this.weeklyScheduleEntries = weeklyScheduleEntries;
     }
 
     public Set<SemesterFieldSubject> getCurriculumAssignments() {
-        return curriculumAssignments;
+        return semesterFields.stream()
+                .flatMap(context -> context.getCurriculumAssignments().stream())
+                .collect(Collectors.toCollection(HashSet::new));
     }
 
     public void setCurriculumAssignments(Set<SemesterFieldSubject> curriculumAssignments) {
-        this.curriculumAssignments = curriculumAssignments;
     }
 
     public void addGroup(StudentGroup group) {
         groups.add(group);
-        group.setSemester(this);
+        if (group.getSemesterField() == null) {
+            SemesterField context = semesterFields.stream()
+                    .findFirst()
+                    .orElseThrow(() -> new IllegalStateException("Semester must have a field before adding a group."));
+            group.setSemesterField(context);
+        }
     }
 
     public void removeGroup(StudentGroup group) {
         groups.remove(group);
-        group.setSemester(null);
+        group.setSemesterField(null);
     }
 
-    public void addField(Field field) {
-        fields.add(field);
-        field.getSemesters().add(this);
+    public SemesterField addField(Field field) {
+        return semesterFields.stream()
+                .filter(context -> context.getField().equals(field))
+                .findFirst()
+                .orElseGet(() -> {
+                    SemesterField context = new SemesterField(this, field);
+                    semesterFields.add(context);
+                    field.getSemesterFields().add(context);
+                    return context;
+                });
     }
 
     public void removeField(Field field) {
-        fields.remove(field);
-        field.getSemesters().remove(this);
+        semesterFields.removeIf(context -> {
+            boolean matches = context.getField().equals(field);
+            if (matches) {
+                field.getSemesterFields().remove(context);
+            }
+            return matches;
+        });
+    }
+
+    public Set<SemesterField> getSemesterFields() {
+        return semesterFields;
+    }
+
+    public void setSemesterFields(Set<SemesterField> semesterFields) {
+        this.semesterFields = semesterFields;
+    }
+
+    public SemesterField getSemesterField(Field field) {
+        return semesterFields.stream()
+                .filter(context -> context.getField().equals(field))
+                .findFirst()
+                .orElseThrow(() -> new IllegalArgumentException("Field does not belong to this semester."));
     }
 
     public SemesterFieldSubject assignSubject(Field field, Subject subject) {
-        if (!fields.contains(field)) {
-            throw new IllegalArgumentException("Field must belong to the semester before assigning its subjects.");
-        }
-        return curriculumAssignments.stream()
-                .filter(assignment -> assignment.getField().equals(field)
+        SemesterField context = getSemesterField(field);
+        return context.getCurriculumAssignments().stream()
+                .filter(assignment -> assignment.getSemesterField().equals(context)
                         && assignment.getSubject().equals(subject))
                 .findFirst()
                 .orElseGet(() -> {
-                    SemesterFieldSubject assignment = new SemesterFieldSubject(this, field, subject);
-                    curriculumAssignments.add(assignment);
+                    SemesterFieldSubject assignment = new SemesterFieldSubject(context, subject);
+                    context.getCurriculumAssignments().add(assignment);
                     field.getCurriculumAssignments().add(assignment);
                     subject.getCurriculumAssignments().add(assignment);
                     return assignment;
@@ -165,8 +191,9 @@ public class Semester {
     }
 
     public void removeSubject(Field field, Subject subject) {
-        curriculumAssignments.removeIf(assignment -> {
-            boolean matches = assignment.getField().equals(field)
+        SemesterField context = getSemesterField(field);
+        context.getCurriculumAssignments().removeIf(assignment -> {
+            boolean matches = assignment.getSemesterField().equals(context)
                     && assignment.getSubject().equals(subject);
             if (matches) {
                 field.getCurriculumAssignments().remove(assignment);

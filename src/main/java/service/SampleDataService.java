@@ -14,6 +14,7 @@ import model.Room;
 import model.RoomBooking;
 import model.ScheduledNotificationTask;
 import model.Semester;
+import model.SemesterField;
 import model.Student;
 import model.StudentGroup;
 import model.Subject;
@@ -60,9 +61,8 @@ public class SampleDataService {
             semester.setStartDate(today.minusWeeks(8));
             semester.setEndDate(today.plusWeeks(8));
             StudentGroup group = new StudentGroup("24c");
-            field.addSemester(semester);
-            semester.addGroup(group);
-            group.setField(field);
+            SemesterField semesterField = field.addSemester(semester);
+            group.setSemesterField(semesterField);
 
             Student anna = new Student("Anna", "Nowak", new BirthDate(LocalDate.of(2002, 3, 15)), Set.of("anna.nowak@student.pja.edu.pl"), "s25717");
             Student jan = new Student("Jan", "Kowalski", new BirthDate(LocalDate.of(2001, 5, 10)), Set.of("jan.kowalski@student.pja.edu.pl"), "s25718");
@@ -83,26 +83,10 @@ public class SampleDataService {
             admin.setPasswordHash(passwordService.hash("admin"));
 
             Subject databaseSystems = new Subject("Database Systems");
-            databaseSystems.addGroup(group);
             teacher.addQualifiedSubject(databaseSystems);
 
             Room laboratoryRoom = new Room("201", 28);
             Room lectureRoom = new Room("Auditorium A", 120);
-
-            WeeklyScheduleEntry scheduleEntry = new WeeklyScheduleEntry(
-                    group,
-                    databaseSystems,
-                    teacher,
-                    ClassType.TUTORIAL,
-                    MeetingMode.CLASSROOM,
-                    DayOfWeek.TUESDAY,
-                    LocalTime.of(10, 0),
-                    LocalTime.of(11, 30),
-                    laboratoryRoom,
-                    null,
-                    semester,
-                    field
-            );
 
             ClassMeeting currentTutorial = new ClassMeeting(
                     startOfWeek.plusDays(1),
@@ -115,7 +99,6 @@ public class SampleDataService {
                     teacher,
                     group
             );
-            currentTutorial.setScheduleEntry(scheduleEntry);
             currentTutorial.setComment("Current-week database systems tutorial for public schedule demo.");
             databaseSystems.getClassMeetings().add(currentTutorial);
             teacher.getClassMeetings().add(currentTutorial);
@@ -190,6 +173,7 @@ public class SampleDataService {
 
             em.persist(field);
             em.persist(semester);
+            em.persist(group);
             em.persist(anna);
             em.persist(jan);
             em.persist(maria);
@@ -200,8 +184,13 @@ public class SampleDataService {
             em.persist(semester.assignSubject(field, databaseSystems));
             em.persist(laboratoryRoom);
             em.persist(lectureRoom);
-            em.persist(scheduleEntry);
             em.persist(report);
+            em.flush();
+
+            WeeklyScheduleEntry scheduleEntry = new WeeklyScheduleEntry(currentTutorial);
+            em.persist(scheduleEntry);
+            currentTutorial.setScheduleEntry(scheduleEntry);
+
             EmailNotification studentNotification = new EmailNotification("Attendance was updated for database systems laboratory", 2, true, anna.getPrimaryEmail());
             studentNotification.setRecipient(anna);
             studentNotification.setStatus(NotificationStatus.SENT);

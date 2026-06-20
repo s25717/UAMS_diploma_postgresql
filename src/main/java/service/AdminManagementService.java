@@ -12,6 +12,7 @@ import model.Notification;
 import model.Person;
 import model.ScheduledNotificationTask;
 import model.Semester;
+import model.SemesterField;
 import model.SemesterFieldSubject;
 import model.Student;
 import model.StudentGroup;
@@ -148,14 +149,13 @@ public class AdminManagementService {
         transactionManager.executeVoid(em -> {
             Field field = require(em.find(Field.class, id), "Select a field first.");
             Long semesterCount = em.createQuery("""
-                    select count(sem)
-                    from Semester sem
-                    join sem.fields field
-                    where field.id = :fieldId
+                    select count(context)
+                    from SemesterField context
+                    where context.field.id = :fieldId
                     """, Long.class)
                     .setParameter("fieldId", id)
                     .getSingleResult();
-            if (semesterCount > 0 || count(em, StudentGroup.class, "field.id", id) > 0) {
+            if (semesterCount > 0) {
                 throw new IllegalArgumentException("Cannot delete a field used by semesters or groups.");
             }
             em.remove(field);
@@ -190,8 +190,8 @@ public class AdminManagementService {
                 Long usages = em.createQuery("""
                         select count(g)
                         from StudentGroup g
-                        where g.semester.id = :semesterId
-                        and g.field.id in :fieldIds
+                        where g.semesterField.semester.id = :semesterId
+                        and g.semesterField.field.id in :fieldIds
                         """, Long.class)
                         .setParameter("semesterId", id)
                         .setParameter("fieldIds", removedFieldIds)
@@ -199,8 +199,8 @@ public class AdminManagementService {
                 Long curriculumUsages = em.createQuery("""
                         select count(c)
                         from SemesterFieldSubject c
-                        where c.semester.id = :semesterId
-                        and c.field.id in :fieldIds
+                        where c.semesterField.semester.id = :semesterId
+                        and c.semesterField.field.id in :fieldIds
                         """, Long.class)
                         .setParameter("semesterId", id)
                         .setParameter("fieldIds", removedFieldIds)
@@ -222,9 +222,29 @@ public class AdminManagementService {
     public void deleteSemester(Long id) {
         transactionManager.executeVoid(em -> {
             Semester semester = require(em.find(Semester.class, id), "Select a semester first.");
-            if (count(em, StudentGroup.class, "semester.id", id) > 0
-                    || count(em, WeeklyScheduleEntry.class, "semester.id", id) > 0) {
-                throw new IllegalArgumentException("Cannot delete a semester with groups or weekly schedules.");
+            Long groupCount = em.createQuery("""
+                    select count(g)
+                    from StudentGroup g
+                    where g.semesterField.semester.id = :semesterId
+                    """, Long.class)
+                    .setParameter("semesterId", id)
+                    .getSingleResult();
+            Long scheduleCount = em.createQuery("""
+                    select count(w)
+                    from WeeklyScheduleEntry w
+                    where w.sourceClassMeeting.group.semesterField.semester.id = :semesterId
+                    """, Long.class)
+                    .setParameter("semesterId", id)
+                    .getSingleResult();
+            Long curriculumCount = em.createQuery("""
+                    select count(c)
+                    from SemesterFieldSubject c
+                    where c.semesterField.semester.id = :semesterId
+                    """, Long.class)
+                    .setParameter("semesterId", id)
+                    .getSingleResult();
+            if (groupCount > 0 || scheduleCount > 0 || curriculumCount > 0) {
+                throw new IllegalArgumentException("Cannot delete a semester with groups, curriculum, or weekly schedules.");
             }
             em.remove(semester);
         });
@@ -232,12 +252,9 @@ public class AdminManagementService {
 
     public StudentGroup createGroup(String code, Long semesterId, Long fieldId, int maxSize) {
         return transactionManager.execute(em -> {
-            Semester semester = require(em.find(Semester.class, semesterId), "Semester is required.");
-            Field field = require(em.find(Field.class, fieldId), "Field is required.");
-            assertSemesterContainsField(em, semesterId, fieldId);
+            SemesterField semesterField = requireSemesterField(em, semesterId, fieldId);
             StudentGroup group = new StudentGroup(code, maxSize);
-            group.setSemester(semester);
-            group.setField(field);
+            group.setSemesterField(semesterField);
             validateEntity(group);
             em.persist(group);
             return group;
@@ -247,10 +264,8 @@ public class AdminManagementService {
     public void updateGroup(Long id, String code, Long semesterId, Long fieldId, int maxSize) {
         transactionManager.executeVoid(em -> {
             StudentGroup group = require(em.find(StudentGroup.class, id), "Select a group first.");
-            assertSemesterContainsField(em, semesterId, fieldId);
             group.setCode(code);
-            group.setSemester(require(em.find(Semester.class, semesterId), "Semester is required."));
-            group.setField(require(em.find(Field.class, fieldId), "Field is required."));
+            group.setSemesterField(requireSemesterField(em, semesterId, fieldId));
             group.setMaxSize(maxSize);
             assertGroupSizeWithinLimit(em, id, maxSize);
             validateEntity(group);
@@ -262,11 +277,9 @@ public class AdminManagementService {
             StudentGroup group = require(em.find(StudentGroup.class, id), "Select a group first.");
             if (count(em, Student.class, "group.id", id) > 0
                     || count(em, ClassMeeting.class, "group.id", id) > 0
-                    || count(em, WeeklyScheduleEntry.class, "group.id", id) > 0) {
+                    || countWeeklyEntries(em, "sourceClassMeeting.group.id", id) > 0) {
                 throw new IllegalArgumentException("Cannot delete a group with students, class meetings, or weekly schedules.");
             }
-            group.getSubjects().forEach(subject -> subject.getGroups().remove(group));
-            group.getSubjects().clear();
             em.remove(group);
         });
     }
@@ -292,12 +305,10 @@ public class AdminManagementService {
         transactionManager.executeVoid(em -> {
             Subject subject = require(em.find(Subject.class, id), "Select a subject first.");
             if (count(em, ClassMeeting.class, "subject.id", id) > 0
-                    || count(em, WeeklyScheduleEntry.class, "subject.id", id) > 0
+                    || countWeeklyEntries(em, "sourceClassMeeting.subject.id", id) > 0
                     || count(em, SemesterFieldSubject.class, "subject.id", id) > 0) {
                 throw new IllegalArgumentException("Cannot delete a subject used by curriculum, class meetings, or weekly schedules.");
             }
-            subject.getGroups().forEach(group -> group.getSubjects().remove(subject));
-            subject.getGroups().clear();
             subject.getQualifiedTeachers().forEach(teacher -> teacher.getQualifiedSubjects().remove(subject));
             subject.getQualifiedTeachers().clear();
             em.remove(subject);
@@ -305,23 +316,11 @@ public class AdminManagementService {
     }
 
     public void assignSubjectToGroup(Long subjectId, Long groupId) {
-        transactionManager.executeVoid(em -> {
-            Subject subject = require(em.find(Subject.class, subjectId), "Subject is required.");
-            StudentGroup group = require(em.find(StudentGroup.class, groupId), "Group is required.");
-            assertSubjectHasQualifiedTeacher(em, subjectId);
-            if (!isSubjectAvailableInSemesterField(em, subjectId, group.getSemester().getId(), group.getField().getId())) {
-                throw new IllegalArgumentException("Assign the subject to the group's semester and field before assigning it to the group.");
-            }
-            subject.addGroup(group);
-        });
+        throw new UnsupportedOperationException("Subjects are assigned through semester-field curriculum, not directly to groups.");
     }
 
     public void removeSubjectFromGroup(Long subjectId, Long groupId) {
-        transactionManager.executeVoid(em -> {
-            Subject subject = require(em.find(Subject.class, subjectId), "Subject is required.");
-            StudentGroup group = require(em.find(StudentGroup.class, groupId), "Group is required.");
-            subject.removeGroup(group);
-        });
+        throw new UnsupportedOperationException("Subjects are assigned through semester-field curriculum, not directly to groups.");
     }
 
     public void assignSubjectToSemesterField(Long subjectId, Long semesterId, Long fieldId) {
@@ -329,7 +328,7 @@ public class AdminManagementService {
             Subject subject = require(em.find(Subject.class, subjectId), "Subject is required.");
             Semester semester = require(em.find(Semester.class, semesterId), "Semester is required.");
             Field field = require(em.find(Field.class, fieldId), "Field is required.");
-            assertSemesterContainsField(em, semesterId, fieldId);
+            requireSemesterField(em, semesterId, fieldId);
             assertSubjectHasQualifiedTeacher(em, subjectId);
             em.persist(semester.assignSubject(field, subject));
         });
@@ -341,19 +340,29 @@ public class AdminManagementService {
             Semester semester = require(em.find(Semester.class, semesterId), "Semester is required.");
             Field field = require(em.find(Field.class, fieldId), "Field is required.");
             Long groupAssignments = em.createQuery("""
-                    select count(g)
-                    from StudentGroup g
-                    join g.subjects s
-                    where g.semester.id = :semesterId
-                    and g.field.id = :fieldId
-                    and s.id = :subjectId
+                    select count(cm)
+                    from ClassMeeting cm
+                    where cm.group.semesterField.semester.id = :semesterId
+                    and cm.group.semesterField.field.id = :fieldId
+                    and cm.subject.id = :subjectId
                     """, Long.class)
                     .setParameter("semesterId", semesterId)
                     .setParameter("fieldId", fieldId)
                     .setParameter("subjectId", subjectId)
                     .getSingleResult();
-            if (groupAssignments > 0) {
-                throw new IllegalArgumentException("Cannot remove a curriculum subject while it is assigned to groups in that semester and field.");
+            Long scheduleAssignments = em.createQuery("""
+                    select count(w)
+                    from WeeklyScheduleEntry w
+                    where w.sourceClassMeeting.group.semesterField.semester.id = :semesterId
+                    and w.sourceClassMeeting.group.semesterField.field.id = :fieldId
+                    and w.sourceClassMeeting.subject.id = :subjectId
+                    """, Long.class)
+                    .setParameter("semesterId", semesterId)
+                    .setParameter("fieldId", fieldId)
+                    .setParameter("subjectId", subjectId)
+                    .getSingleResult();
+            if (groupAssignments > 0 || scheduleAssignments > 0) {
+                throw new IllegalArgumentException("Cannot remove a curriculum subject while it is used by meetings or weekly schedules in that semester and field.");
             }
             semester.removeSubject(field, subject);
         });
@@ -362,7 +371,7 @@ public class AdminManagementService {
     private void assertNoPersonHistory(EntityManager em, Long personId) {
         if (count(em, Attendance.class, "student.id", personId) > 0
                 || count(em, ClassMeeting.class, "teacher.id", personId) > 0
-                || count(em, WeeklyScheduleEntry.class, "teacher.id", personId) > 0
+                || countWeeklyEntries(em, "sourceClassMeeting.teacher.id", personId) > 0
                 || count(em, Notification.class, "recipient.id", personId) > 0
                 || count(em, ScheduledNotificationTask.class, "recipient.id", personId) > 0) {
             throw new IllegalArgumentException("Cannot delete a user with attendance, meetings, schedules, or notifications.");
@@ -397,8 +406,8 @@ public class AdminManagementService {
         Long count = em.createQuery("""
                 select count(c)
                 from SemesterFieldSubject c
-                where c.semester.id = :semesterId
-                and c.field.id = :fieldId
+                where c.semesterField.semester.id = :semesterId
+                and c.semesterField.field.id = :fieldId
                 and c.subject.id = :subjectId
                 """, Long.class)
                 .setParameter("semesterId", semesterId)
@@ -419,23 +428,22 @@ public class AdminManagementService {
         return fields;
     }
 
-    private void assertSemesterContainsField(EntityManager em, Long semesterId, Long fieldId) {
+    private SemesterField requireSemesterField(EntityManager em, Long semesterId, Long fieldId) {
         if (semesterId == null || fieldId == null) {
             throw new IllegalArgumentException("Semester and field are required.");
         }
-        Long count = em.createQuery("""
-                select count(sem)
-                from Semester sem
-                join sem.fields field
-                where sem.id = :semesterId
-                and field.id = :fieldId
-                """, Long.class)
+        SemesterField semesterField = em.createQuery("""
+                select context
+                from SemesterField context
+                where context.semester.id = :semesterId
+                and context.field.id = :fieldId
+                """, SemesterField.class)
                 .setParameter("semesterId", semesterId)
                 .setParameter("fieldId", fieldId)
-                .getSingleResult();
-        if (count == 0) {
-            throw new IllegalArgumentException("The selected field does not belong to the selected semester.");
-        }
+                .getResultStream()
+                .findFirst()
+                .orElse(null);
+        return require(semesterField, "The selected field does not belong to the selected semester.");
     }
 
     private void assertSubjectHasQualifiedTeacher(EntityManager em, Long subjectId) {
@@ -469,6 +477,10 @@ public class AdminManagementService {
         return em.createQuery("select count(e) from " + entityClass.getSimpleName() + " e where e." + propertyPath + " = :id", Long.class)
                 .setParameter("id", id)
                 .getSingleResult();
+    }
+
+    private long countWeeklyEntries(EntityManager em, String propertyPath, Long id) {
+        return count(em, WeeklyScheduleEntry.class, propertyPath, id);
     }
 
     private <T> void validateEntity(T entity) {

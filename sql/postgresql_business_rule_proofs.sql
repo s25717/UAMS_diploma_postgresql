@@ -1,5 +1,5 @@
 -- PostgreSQL business-rule proof script for the UAMS diploma version.
--- Run after Flyway migrations V1..V7 have been applied.
+-- Run after Flyway migrations V1..V9 have been applied.
 -- The whole script runs inside one transaction and finishes with ROLLBACK.
 
 BEGIN;
@@ -46,7 +46,10 @@ DECLARE
     field_id bigint;
     other_field_id bigint;
     semester_id bigint;
+    semester_field_id bigint;
+    other_semester_field_id bigint;
     group_id bigint;
+    same_context_group_id bigint;
     other_group_id bigint;
     subject_id bigint;
     other_subject_id bigint;
@@ -75,14 +78,23 @@ BEGIN
     RETURNING id INTO semester_id;
 
     INSERT INTO semester_field (semester_id, field_id)
-    VALUES (semester_id, field_id), (semester_id, other_field_id);
+    VALUES (semester_id, field_id)
+    RETURNING id INTO semester_field_id;
 
-    INSERT INTO student_group (code, max_size, semester_id, field_id)
-    VALUES ('PROOF-G1', 2, semester_id, field_id)
+    INSERT INTO semester_field (semester_id, field_id)
+    VALUES (semester_id, other_field_id)
+    RETURNING id INTO other_semester_field_id;
+
+    INSERT INTO student_group (code, max_size, semester_field_id)
+    VALUES ('PROOF-G1', 2, semester_field_id)
     RETURNING id INTO group_id;
 
-    INSERT INTO student_group (code, max_size, semester_id, field_id)
-    VALUES ('PROOF-G2', 2, semester_id, other_field_id)
+    INSERT INTO student_group (code, max_size, semester_field_id)
+    VALUES ('PROOF-G3', 2, semester_field_id)
+    RETURNING id INTO same_context_group_id;
+
+    INSERT INTO student_group (code, max_size, semester_field_id)
+    VALUES ('PROOF-G2', 2, other_semester_field_id)
     RETURNING id INTO other_group_id;
 
     INSERT INTO subject (name)
@@ -111,17 +123,13 @@ BEGIN
 
     INSERT INTO teacher_subject (teacher_id, subject_id) VALUES (teacher_id, subject_id);
     INSERT INTO teacher_subject (teacher_id, subject_id) VALUES (teacher_id, unassigned_subject_id);
+    INSERT INTO teacher_subject (teacher_id, subject_id) VALUES (other_teacher_id, subject_id);
     INSERT INTO teacher_subject (teacher_id, subject_id) VALUES (other_teacher_id, other_subject_id);
 
-    INSERT INTO semester_field_subject (semester_id, field_id, subject_id)
-    VALUES (semester_id, field_id, subject_id);
-    INSERT INTO semester_field_subject (semester_id, field_id, subject_id)
-    VALUES (semester_id, field_id, other_subject_id);
-    INSERT INTO semester_field_subject (semester_id, field_id, subject_id)
-    VALUES (semester_id, field_id, unassigned_subject_id);
-
-    INSERT INTO subject_group (subject_id, group_id) VALUES (subject_id, group_id);
-    INSERT INTO subject_group (subject_id, group_id) VALUES (other_subject_id, group_id);
+    INSERT INTO semester_field_subject (semester_field_id, subject_id)
+    VALUES (semester_field_id, subject_id);
+    INSERT INTO semester_field_subject (semester_field_id, subject_id)
+    VALUES (semester_field_id, other_subject_id);
 
     INSERT INTO person (name, surname, birth_date, primary_email, password_hash)
     VALUES ('Proof', 'StudentOne', DATE '2004-01-01', 'proof.student1@example.com', 'hash')
@@ -158,6 +166,9 @@ BEGIN
     INSERT INTO room_booking (date, start_time, end_time, booking_status, room_id, class_meeting_id)
     VALUES (meeting_date, TIME '10:00', TIME '11:30', 'CONFIRMED', room_id, meeting_id);
 
+    INSERT INTO weekly_schedule_entry (source_class_meeting_id)
+    VALUES (meeting_id);
+
     INSERT INTO scheduled_notification_task (task_type, status, scheduled_at, recipient_id, class_meeting_id)
     VALUES ('CLASS_MEETING_REMINDER', 'PENDING', now(), teacher_id, meeting_id)
     RETURNING id INTO task_id;
@@ -166,10 +177,71 @@ BEGIN
     EXECUTE 'SET CONSTRAINTS ALL DEFERRED';
 
     PERFORM pg_temp.expect_error(
-        'group subject must belong to the exact semester-field curriculum',
+        'class meeting group cannot overlap another active meeting',
         format(
-            'INSERT INTO subject_group (subject_id, group_id) VALUES (%s, %s)',
-            subject_id, other_group_id
+            'INSERT INTO class_meeting (
+                 meeting_date, day_of_week, start_time, end_time,
+                 class_type, meeting_mode, status, subject_id, teacher_id, group_id
+             )
+             VALUES (%L, %L, TIME %L, TIME %L, %L, %L, %L, %s, %s, %s)',
+            meeting_date,
+            pg_temp.iso_day_name(meeting_date),
+            '10:30', '11:00',
+            'LECTURE', 'ONLINE', 'DRAFT',
+            subject_id, other_teacher_id, group_id
+        )
+    );
+
+    PERFORM pg_temp.expect_error(
+        'class meeting teacher cannot overlap another active meeting',
+        format(
+            'INSERT INTO class_meeting (
+                 meeting_date, day_of_week, start_time, end_time,
+                 class_type, meeting_mode, status, subject_id, teacher_id, group_id
+             )
+             VALUES (%L, %L, TIME %L, TIME %L, %L, %L, %L, %s, %s, %s)',
+            meeting_date,
+            pg_temp.iso_day_name(meeting_date),
+            '10:30', '11:00',
+            'LECTURE', 'ONLINE', 'DRAFT',
+            subject_id, teacher_id, same_context_group_id
+        )
+    );
+
+    PERFORM pg_temp.expect_error(
+        'weekly schedule source cannot create recurring group overlap',
+        format(
+            'WITH source AS (
+                 INSERT INTO class_meeting (
+                     meeting_date, day_of_week, start_time, end_time,
+                     class_type, meeting_mode, status, subject_id, teacher_id, group_id
+                 )
+                 VALUES (%L, %L, TIME %L, TIME %L, %L, %L, %L, %s, %s, %s)
+                 RETURNING id
+             )
+             INSERT INTO weekly_schedule_entry (source_class_meeting_id)
+             SELECT id FROM source',
+            other_meeting_date,
+            pg_temp.iso_day_name(other_meeting_date),
+            '10:30', '11:45',
+            'LECTURE', 'ONLINE', 'DRAFT',
+            subject_id, other_teacher_id, group_id
+        )
+    );
+
+    PERFORM pg_temp.expect_error(
+        'class meeting subject must belong to the exact group semester-field curriculum',
+        format(
+            'INSERT INTO class_meeting (
+                 meeting_date, day_of_week, start_time, end_time,
+                 class_type, meeting_mode, status, subject_id, teacher_id, group_id
+             )
+             VALUES (%L, %L, TIME %L, TIME %L, %L, %L, %L, %s, %s, %s)',
+            other_meeting_date + 2,
+            pg_temp.iso_day_name(other_meeting_date + 2),
+            '16:00', '17:30',
+            'LECTURE', 'ONLINE', 'DRAFT',
+            subject_id, teacher_id, other_group_id
         )
     );
 
@@ -199,7 +271,7 @@ BEGIN
     );
 
     PERFORM pg_temp.expect_error(
-        'class meeting subject must be assigned to the selected group',
+        'class meeting subject must be in the selected group curriculum',
         format(
             'INSERT INTO class_meeting (
                  meeting_date, day_of_week, start_time, end_time,

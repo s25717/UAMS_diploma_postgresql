@@ -6,9 +6,9 @@ import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
-import jakarta.persistence.ManyToMany;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.OneToMany;
+import jakarta.persistence.Transient;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -32,22 +32,15 @@ public class StudentGroup {
 
     @NotNull
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    private Semester semester;
-
-    @NotNull
-    @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    private Field field;
+    private SemesterField semesterField;
 
     @OneToMany(mappedBy = "group")
     private Set<Student> students = new HashSet<>();
 
-    @ManyToMany(mappedBy = "groups")
-    private Set<Subject> subjects = new HashSet<>();
-
     @OneToMany(mappedBy = "group")
     private Set<ClassMeeting> classMeetings = new HashSet<>();
 
-    @OneToMany(mappedBy = "group")
+    @Transient
     private Set<WeeklyScheduleEntry> weeklyScheduleEntries = new HashSet<>();
 
     protected StudentGroup() {
@@ -87,19 +80,43 @@ public class StudentGroup {
     }
 
     public Semester getSemester() {
-        return semester;
+        return semesterField == null ? null : semesterField.getSemester();
     }
 
     public void setSemester(Semester semester) {
-        this.semester = semester;
+        if (semester == null) {
+            this.semesterField = null;
+            return;
+        }
+        Field currentField = getField();
+        if (currentField == null) {
+            throw new IllegalArgumentException("Set semesterField directly or set field before changing semester.");
+        }
+        this.semesterField = semester.getSemesterField(currentField);
     }
 
     public Field getField() {
-        return field;
+        return semesterField == null ? null : semesterField.getField();
     }
 
     public void setField(Field field) {
-        this.field = field;
+        if (field == null) {
+            this.semesterField = null;
+            return;
+        }
+        Semester currentSemester = getSemester();
+        if (currentSemester == null) {
+            throw new IllegalArgumentException("Set semesterField directly or set semester before changing field.");
+        }
+        this.semesterField = currentSemester.getSemesterField(field);
+    }
+
+    public SemesterField getSemesterField() {
+        return semesterField;
+    }
+
+    public void setSemesterField(SemesterField semesterField) {
+        this.semesterField = semesterField;
     }
 
     public Set<Student> getStudents() {
@@ -108,14 +125,6 @@ public class StudentGroup {
 
     public void setStudents(Set<Student> students) {
         this.students = students;
-    }
-
-    public Set<Subject> getSubjects() {
-        return subjects;
-    }
-
-    public void setSubjects(Set<Subject> subjects) {
-        this.subjects = subjects;
     }
 
     public Set<ClassMeeting> getClassMeetings() {

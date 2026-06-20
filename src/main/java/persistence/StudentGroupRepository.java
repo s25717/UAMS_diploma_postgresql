@@ -33,8 +33,9 @@ public class StudentGroupRepository extends GenericRepository<StudentGroup> {
                     from StudentGroup g
                     left join fetch g.students s
                     left join fetch s.emails
-                    join fetch g.semester sem
-                    join fetch g.field
+                    join fetch g.semesterField sf
+                    join fetch sf.semester sem
+                    join fetch sf.field
                     order by g.code
                     """, StudentGroup.class)
                     .getResultList();
@@ -46,8 +47,9 @@ public class StudentGroupRepository extends GenericRepository<StudentGroup> {
             return em.createQuery("""
                     select distinct g
                     from StudentGroup g
-                    join fetch g.semester sem
-                    join fetch g.field
+                    join fetch g.semesterField sf
+                    join fetch sf.semester sem
+                    join fetch sf.field
                     left join fetch g.students
                     where g.id = :id
                     """, StudentGroup.class)
@@ -63,8 +65,9 @@ public class StudentGroupRepository extends GenericRepository<StudentGroup> {
                     select distinct g
                     from StudentGroup g
                     join g.students owner
-                    join fetch g.semester sem
-                    join fetch g.field
+                    join fetch g.semesterField sf
+                    join fetch sf.semester sem
+                    join fetch sf.field
                     left join fetch g.students
                     where owner.id = :studentId
                     """, StudentGroup.class)
@@ -92,9 +95,11 @@ public class StudentGroupRepository extends GenericRepository<StudentGroup> {
             return em.createQuery("""
                     select distinct g
                     from StudentGroup g
-                    join fetch g.semester sem
-                    left join fetch sem.fields
-                    join fetch g.field
+                    join fetch g.semesterField sf
+                    join fetch sf.semester sem
+                    left join fetch sem.semesterFields allContexts
+                    left join fetch allContexts.field
+                    join fetch sf.field
                     order by g.code
                     """, StudentGroup.class)
                     .getResultList();
