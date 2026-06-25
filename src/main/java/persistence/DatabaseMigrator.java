@@ -6,6 +6,11 @@ public final class DatabaseMigrator {
     private DatabaseMigrator() {
     }
 
+    public static void main(String[] args) {
+        migrate();
+        System.out.println("Flyway migrations applied successfully.");
+    }
+
     public static void migrate() {
         Flyway.configure()
                 .dataSource(DatabaseConfig.jdbcUrl(), DatabaseConfig.username(), DatabaseConfig.password())

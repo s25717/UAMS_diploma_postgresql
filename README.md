@@ -6,7 +6,7 @@ Diploma-ready JavaFX university management system using PostgreSQL, Flyway migra
 
 - Java 17 Maven project with JavaFX GUI.
 - PostgreSQL-only persistence, configured through environment variables.
-- Flyway migrations `V1` through `V7`.
+- Flyway migrations `V1` through `V10`.
 - Explicit PostgreSQL DDL, constraints, indexes, triggers, and proof scripts.
 - JPA inheritance examples:
   - `Person -> Student / Teacher / Administrator` with `JOINED`.
@@ -83,7 +83,7 @@ The sample data service creates demo accounts when the database is empty:
 
 Implemented:
 
-- PostgreSQL migration from H2-style setup.
+- PostgreSQL-only persistence replacing the earlier H2/prototype setup.
 - Explicit DDL with Flyway.
 - Core domain entities, inheritance, associations, and validation.
 - Real database constraints, triggers, indexes, and proof scripts.
